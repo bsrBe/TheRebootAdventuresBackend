@@ -1,12 +1,75 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
-import { IRegistration } from '../interfaces/user.interface';
+import { IRegistration, IInvoice, ITelegramData, IRegistrationModel } from '../interfaces/user.interface';
 
-interface TransformedUser extends Omit<IRegistration, '_id' | '__v'> {
-  id: string;
-}
+// Define the schema for the Telegram data
+const telegramDataSchema = new Schema<ITelegramData>({
+  id: { type: Number, required: true },
+  chatId: { type: Schema.Types.Mixed, required: false },
+  first_name: { type: String },
+  last_name: { type: String },
+  username: { type: String },
+  language_code: { type: String },
+  is_bot: { type: Boolean },
+  last_activity: { type: Date, default: Date.now },
+  is_subscribed: { type: Boolean, default: true },
+  photo_url: { type: String }
+}, { _id: false });
 
+// Define the schema for invoices
+const invoiceSchema = new Schema<IInvoice>({
+  _id: { type: Schema.Types.ObjectId, auto: true },
+  invoiceId: { 
+    type: String, 
+    required: true,
+    unique: true
+  },
+  eventName: { 
+    type: String, 
+    required: true,
+    trim: true
+  },
+  amount: { 
+    type: Number, 
+    required: true,
+    min: 0
+  },
+  place: { 
+    type: String, 
+    required: true,
+    trim: true
+  },
+  time: { 
+    type: Date, 
+    required: true
+  },
+  chapaLink: { 
+    type: String, 
+    required: true
+  },
+  status: {
+    type: String,
+    enum: ['pending', 'paid', 'cancelled', 'failed'],
+    default: 'pending'
+  },
+  chapaReference: {
+    type: String,
+    sparse: true
+  },
+  paidAt: {
+    type: Date,
+    default: null
+  },
+  metadata: {
+    type: Schema.Types.Mixed,
+    default: {}
+  }
+}, { timestamps: true, _id: false });
+
+// Main registration schema
 const registrationSchema = new Schema<IRegistration>(
   {
+    _id: { type: Schema.Types.ObjectId, auto: true },
+    id: { type: String, required: false },
     fullName: {
       type: String,
       required: [true, 'Full name is required'],
@@ -52,38 +115,98 @@ const registrationSchema = new Schema<IRegistration>(
       type: String,
       required: [true, 'Horse riding experience is required'],
       enum: {
-        values: ['none', 'beginner', 'intermediate', 'advanced'],
-        message: 'Invalid experience level'
+        values: ['beginner', 'intermediate', 'advanced'],
+        message: 'Horse riding experience must be one of: beginner, intermediate, advanced'
       }
     },
     referralSource: {
       type: String,
-      trim: true,
-      maxlength: [200, 'Referral source must be less than 200 characters']
+      required: [true, 'Referral source is required'],
+      trim: true
     },
     telegramData: {
-      type: Schema.Types.Mixed,
+      type: telegramDataSchema,
       default: null
-    }
+    },
+    registeredEvents: [{
+      eventId: { type: Schema.Types.ObjectId, ref: 'Event' },
+      eventName: String,
+      registrationDate: { type: Date, default: Date.now },
+      status: { 
+        type: String, 
+        enum: ['registered', 'payment_initiated', 'paid', 'cancelled'],
+        default: 'registered'
+      }
+    }],
+    invoices: {
+      type: [invoiceSchema],
+      default: []
+    },
+    isAdmin: {
+      type: Boolean,
+      default: false
+    },
+    // Removed event and paymentStatus as they are now handled by invoices
   },
   {
     timestamps: true,
     toJSON: {
-  transform(doc, ret): TransformedUser {
-    const { _id, __v, ...rest } = ret as IRegistration & { _id: any; __v: number };
-    return { 
-      ...rest, 
-      id: _id.toString() 
-    } as TransformedUser;
-  }
-}
-
+      transform(doc, ret) {
+        // Create a new object with the properties we want to keep
+        const { _id, __v, ...rest } = ret;
+        
+        // Return the transformed object with id instead of _id
+        return {
+          ...rest,
+          ...(_id && { id: _id.toString() })
+        };
+      }
+    }
   }
 );
 
-// Add index for better query performance
+// Indexes
 registrationSchema.index({ 'telegramData.id': 1 }, { sparse: true });
+registrationSchema.index({ event: 1 });
+registrationSchema.index({ paymentStatus: 1 });
 
-const Registration: Model<IRegistration> = mongoose.model<IRegistration>('Registration', registrationSchema);
+// Add instance methods
+registrationSchema.methods.addInvoice = async function(invoice: IInvoice): Promise<IRegistration> {
+  this.invoices.push(invoice);
+  return this.save();
+};
+
+registrationSchema.methods.updateInvoiceStatus = async function(
+  invoiceId: string, 
+  status: 'pending' | 'paid' | 'cancelled' | 'failed',
+  chapaReference?: string
+): Promise<IRegistration> {
+  const invoice = this.invoices.find((inv: IInvoice) => inv.invoiceId === invoiceId);
+  if (!invoice) {
+    throw new Error('Invoice not found');
+  }
+  
+  invoice.status = status;
+  if (status === 'paid') {
+    invoice.paidAt = new Date();
+  }
+  if (chapaReference) {
+    invoice.chapaReference = chapaReference;
+  }
+  
+  return this.save();
+};
+
+// Add static methods
+registrationSchema.statics.findByTelegramId = async function(telegramId: number): Promise<IRegistration | null> {
+  return this.findOne({ 'telegramData.id': telegramId });
+};
+
+registrationSchema.statics.findWithPendingInvoices = async function(): Promise<IRegistration[]> {
+  return this.find({ 'invoices.status': 'pending' });
+};
+
+// Create and export the model
+const Registration = mongoose.model<IRegistration, IRegistrationModel>('Registration', registrationSchema);
 
 export { Registration };

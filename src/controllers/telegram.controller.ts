@@ -1,0 +1,234 @@
+import { Request, Response } from 'express';
+import { TelegramService } from '../services/telegram.service';
+import { Registration } from '../models/user.model';
+import { IInvoice } from '../interfaces/user.interface';
+
+export class TelegramController {
+  private telegramService: TelegramService;
+
+  constructor() {
+    this.telegramService = new TelegramService();
+  }
+
+  /**
+   * Handle Telegram webhook updates
+   */
+  public handleWebhook = async (req: Request, res: Response) => {
+    try {
+      const { message, callback_query } = req.body;
+      const update = message || callback_query;
+      
+      if (!update) {
+        return res.status(400).json({ success: false, message: 'Invalid update' });
+      }
+
+      const chatId = update.chat?.id || update.message?.chat?.id;
+      const text = update.text || update.data;
+      const userId = update.from?.id;
+
+      if (!chatId) {
+        return res.status(400).json({ success: false, message: 'No chat ID provided' });
+      }
+
+      // Handle commands
+      if (text && text.startsWith('/')) {
+        await this.handleCommand(chatId, text, userId);
+      }
+      
+      // Handle callbacks
+      if (update.data) {
+        await this.handleCallback(chatId, update.data, userId);
+      }
+
+      return res.status(200).json({ success: true });
+    } catch (error) {
+      console.error('Error handling Telegram webhook:', error);
+      return res.status(500).json({ success: false, message: 'Internal server error' });
+    }
+  };
+
+  /**
+   * Handle bot commands
+   */
+  private handleCommand = async (chatId: string | number, command: string, userId?: number) => {
+    const [cmd, ...args] = command.split(' ');
+
+    switch (cmd.toLowerCase()) {
+      case '/start':
+        await this.handleStart(chatId, userId);
+        break;
+      case '/myinvoices':
+        await this.handleMyInvoices(chatId, userId);
+        break;
+      case '/help':
+        await this.sendHelpMessage(chatId);
+        break;
+      default:
+        await this.telegramService.sendMessage(chatId, '❌ Unknown command. Type /help for available commands.');
+    }
+  };
+
+  /**
+   * Handle callback queries
+   */
+  private handleCallback = async (chatId: string | number, data: string, userId?: number) => {
+    const [action, ...params] = data.split('_');
+    
+    switch (action) {
+      case 'PAY':
+        const invoiceId = params[0];
+        await this.handlePayInvoice(chatId, invoiceId, userId);
+        break;
+      // Add more callback handlers as needed
+    }
+  };
+
+  /**
+   * Handle /start command
+   */
+  private handleStart = async (chatId: string | number, userId?: number) => {
+    if (!userId) {
+      return this.telegramService.sendMessage(chatId, 'Welcome! Please use our web interface to register first.');
+    }
+
+    // Update user's telegram data
+    await Registration.findOneAndUpdate(
+      { 'telegramData.id': userId },
+      {
+        $set: {
+          'telegramData.chatId': chatId,
+          'telegramData.last_activity': new Date(),
+          'telegramData.is_subscribed': true
+        }
+      },
+      { new: true, upsert: true }
+    );
+
+    await this.telegramService.sendMessage(
+      chatId,
+      '👋 Welcome to our bot!\n\n' +
+      'Available commands:\n' +
+      '/myinvoices - View your invoices\n' +
+      '/help - Show help information'
+    );
+  };
+
+  /**
+   * Handle /myinvoices command
+   */
+  private handleMyInvoices = async (chatId: string | number, userId?: number) => {
+    if (!userId) {
+      return this.telegramService.sendMessage(chatId, '❌ Please use our web interface to register first.');
+    }
+
+    const user = await Registration.findOne({ 'telegramData.id': userId });
+    if (!user) {
+      return this.telegramService.sendMessage(chatId, '❌ User not found. Please register first.');
+    }
+
+    const invoices = user.invoices || [];
+    
+    if (invoices.length === 0) {
+      return this.telegramService.sendMessage(chatId, 'You have no invoices yet.');
+    }
+
+    // Send each invoice as a separate message
+    for (const invoice of invoices) {
+      await this.sendInvoiceMessage(chatId, invoice);
+    }
+  };
+
+  /**
+   * Handle invoice payment
+   */
+  private handlePayInvoice = async (chatId: string | number, invoiceId: string, userId?: number) => {
+    if (!userId) {
+      return this.telegramService.sendMessage(chatId, '❌ Please use our web interface to register first.');
+    }
+
+    const user = await Registration.findOne({ 'telegramData.id': userId });
+    if (!user) {
+      return this.telegramService.sendMessage(chatId, '❌ User not found.');
+    }
+
+    const invoice = user.invoices.find(inv => inv.invoiceId === invoiceId);
+    if (!invoice) {
+      return this.telegramService.sendMessage(chatId, '❌ Invoice not found.');
+    }
+
+    if (invoice.status === 'paid') {
+      return this.telegramService.sendMessage(chatId, '✅ This invoice has already been paid.');
+    }
+
+    // Send the payment link
+    await this.telegramService.sendMessage(
+      chatId,
+      `💳 Please complete your payment for ${invoice.eventName} by clicking the button below.`,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: 'Pay Now',
+                url: invoice.chapaLink
+              }
+            ]
+          ]
+        }
+      }
+    );
+  };
+
+  /**
+   * Send help message
+   */
+  private sendHelpMessage = async (chatId: string | number) => {
+    const helpText = `
+🤖 *Bot Commands* \n\n` +
+      '*/start* - Start the bot and register your account\n' +
+      '*/myinvoices* - View your invoices\n' +
+      '*/help* - Show this help message\n\n' +
+      'For any questions, please contact our support team.';
+
+    await this.telegramService.sendMessage(chatId, helpText, { parse_mode: 'Markdown' });
+  };
+
+  /**
+   * Send an invoice message
+   */
+  private sendInvoiceMessage = async (chatId: string | number, invoice: IInvoice) => {
+    const statusEmoji = invoice.status === 'paid' ? '✅' : '⏳';
+    const statusText = invoice.status === 'paid' 
+      ? `Paid on ${new Date(invoice.paidAt!).toLocaleDateString()}` 
+      : 'Pending payment';
+
+    const message = `
+📋 *Invoice #${invoice.invoiceId}* ${statusEmoji}\n\n` +
+      `🔹 *Event:* ${invoice.eventName}\n` +
+      `💵 *Amount:* ${invoice.amount} ETB\n` +
+      `📍 *Location:* ${invoice.place}\n` +
+      `📅 *Date & Time:* ${new Date(invoice.time).toLocaleString()}\n` +
+      `📌 *Status:* ${statusText}\n\n`;
+
+    const options: any = {
+      parse_mode: 'Markdown',
+    };
+
+    if (invoice.status !== 'paid') {
+      options.reply_markup = {
+        inline_keyboard: [
+          [
+            {
+              text: '💳 Pay Now',
+              callback_data: `PAY_${invoice.invoiceId}`
+            }
+          ]
+        ]
+      };
+    }
+
+    await this.telegramService.sendMessage(chatId, message, options);
+  };
+}
+
+export const telegramController = new TelegramController();

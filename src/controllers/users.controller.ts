@@ -59,3 +59,29 @@ export const getUsers = async (req: Request, res: Response): Promise<void> => {
     });
   }
 };
+
+export const getUserByTelegramId = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const user = await Registration.findOne({ 'telegramData.id': id });
+
+    if (!user) {
+      res.status(404).json({
+        success: false,
+        error: 'User not found'
+      });
+      return;
+    }
+
+    res.json({
+      success: true,
+      data: user
+    });
+  } catch (error) {
+    console.error('Get user by Telegram ID error:', error);
+    res.status(500).json({
+      success: false,
+      error: 'Server error'
+    });
+  }
+};
