@@ -39,6 +39,33 @@ export class TelegramService {
   }
 
   /**
+   * Send a photo to a specific user
+   */
+  async sendPhoto(
+    chatId: string | number, 
+    photoUrl: string, 
+    caption: string, 
+    options: any = {}
+  ): Promise<boolean> {
+    try {
+      await axios.post(`${this.botApiUrl}/sendPhoto`, {
+        chat_id: chatId,
+        photo: photoUrl,
+        caption,
+        parse_mode: 'HTML',
+        ...options
+      });
+      return true;
+    } catch (error: any) {
+      console.error('Error sending Telegram photo:', error.message);
+      if (error.response) {
+        console.error('Telegram API Error Response:', error.response.data);
+      }
+      return false;
+    }
+  }
+
+  /**
    * Send an invoice to a user
    */
   async sendInvoice(chatId: string | number, invoice: any): Promise<boolean> {

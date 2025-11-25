@@ -78,6 +78,9 @@ export class TelegramController {
         const invoiceId = params[0];
         await this.handlePayInvoice(chatId, invoiceId, userId);
         break;
+      case 'myinvoices':
+        await this.handleMyInvoices(chatId, userId);
+        break;
       // Add more callback handlers as needed
     }
   };
@@ -103,12 +106,39 @@ export class TelegramController {
       { new: true }
     );
 
-    await this.telegramService.sendMessage(
+    // Send welcome photo with Web App button
+    const welcomeCaption = 
+      '🐴 <b>Welcome to Reboot Adventures!</b>\n\n' +
+      'Experience the thrill of horseback riding through Ethiopia\'s stunning landscapes.\n\n' +
+      '📅 Upcoming events and adventures\n' +
+      '💰 Easy online payment\n' +
+      '📱 Manage your bookings\n\n' +
+      'Tap the button below to get started!';
+
+    const photoUrl = `${process.env.APP_URL}/images/welcome.jpg`;
+    
+    await this.telegramService.sendPhoto(
       chatId,
-      '👋 Welcome to our bot!\n\n' +
-      'Available commands:\n' +
-      '/myinvoices - View your invoices\n' +
-      '/help - Show help information'
+      photoUrl,
+      welcomeCaption,
+      {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: '🌐 Open Web App',
+                web_app: { url: process.env.FRONTEND_URL || 'https://your-frontend-url.com' }
+              }
+            ],
+            [
+              {
+                text: '📋 My Invoices',
+                callback_data: 'myinvoices'
+              }
+            ]
+          ]
+        }
+      }
     );
   };
 
