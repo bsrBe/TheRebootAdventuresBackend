@@ -13,33 +13,6 @@ export interface ITelegramData {
   photo_url?: string;       // URL to user's profile photo
 }
 
-export interface IInvoiceBase {
-  invoiceId: string;
-  eventName: string;
-  amount: number;
-  place: string;
-  time: Date;
-  chapaLink: string;
-  status: 'pending' | 'paid' | 'failed' | 'cancelled';
-  createdAt?: Date;
-  updatedAt?: Date;
-  paidAt?: Date | null;
-  chapaReference?: string;
-  metadata?: Record<string, any>;
-}
-
-export interface IInvoice extends IInvoiceBase, Document {
-  // Add any document methods here if needed
-  toObject(): IInvoiceBase & { _id: string };
-}
-
-export interface IRegisteredEvent {
-  eventId: Types.ObjectId;
-  eventName: string;
-  registrationDate: Date;
-  status: 'registered' | 'payment_initiated' | 'paid' | 'cancelled';
-}
-
 export interface IRegistration extends Document {
   userType: 'user';
   _id: Types.ObjectId;
@@ -53,25 +26,14 @@ export interface IRegistration extends Document {
   horseRidingExperience: 'beginner' | 'intermediate' | 'advanced';
   referralSource: string;
   telegramData?: ITelegramData;
-  registeredEvents: IRegisteredEvent[];
-  invoices: IInvoice[];
   isAdmin?: boolean;
   createdAt: Date;
   updatedAt: Date;
-  
-  // Instance methods
-  addInvoice: (invoice: IInvoice) => Promise<IRegistration>;
-  updateInvoiceStatus: (
-    invoiceId: string, 
-    status: 'pending' | 'paid' | 'cancelled' | 'failed',
-    chapaReference?: string
-  ) => Promise<IRegistration>;
 }
 
 // Static methods
 export interface IRegistrationModel extends Model<IRegistration> {
   findByTelegramId(telegramId: number): Promise<IRegistration | null>;
-  findWithPendingInvoices(): Promise<IRegistration[]>;
 }
 
 export interface IRegistrationInput {

@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { IInvoice, IRegistration } from '../interfaces/user.interface';
+import { IRegistration } from '../interfaces/user.interface';
 import { Registration } from '../models/user.model';
 import { TelegramService } from './telegram.service';
 
@@ -49,93 +49,6 @@ export class PaymentService {
   /**
    * Initialize a payment with Chapa
    */
-  // async initializePayment(
-  //   user: IRegistration,
-  //   invoiceData: {
-  //     eventName: string;
-  //     amount: number;
-  //     place: string;
-  //     time: Date;
-  //   }
-  // ): Promise<{ paymentLink: string; invoiceId: string }> {
-  //   try {
-  //     const reference = this.generateReference();
-  //     const invoiceId = `INV-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
-      
-  //     const chapaPayload = {
-  //       amount: invoiceData.amount.toString(),
-  //       currency: 'ETB',
-  //       email: user.email,
-  //       first_name: user.fullName.split(' ')[0],
-  //       last_name: user.fullName.split(' ').slice(1).join(' ') || '.',
-  //       tx_ref: reference,
-  //       callback_url: `${process.env.APP_URL}/api/payments/verify/${reference}`,
-  //       return_url: `${process.env.FRONTEND_URL}/payment/success`,
-  //       'customization[title]': 'Rebbot Adventures',
-  //       'customization[description]': `Payment for ${invoiceData.eventName}`,
-  //       metadata: {
-  //         userId: user._id.toString(),
-  //         invoiceId,
-  //         eventName: invoiceData.eventName,
-  //         place: invoiceData.place,
-  //         time: invoiceData.time.toISOString()
-  //       }
-  //     };
-
-  //     const response = await axios.post<ChapaInitiateResponse>(
-  //       `${this.chapaBaseUrl}/transaction/initialize`,
-  //       chapaPayload,
-  //       {
-  //         headers: {
-  //           Authorization: `Bearer ${this.chapaSecretKey}`,
-  //           'Content-Type': 'application/json',
-  //         },
-  //       }
-  //     );
-
-  //     if (response.data.status !== 'success' || !response.data.data?.checkout_url) {
-  //       throw new Error('Failed to initialize payment with Chapa');
-  //     }
-
-  //     // Create a new invoice object with all required fields
-  //     const newInvoice = {
-  //       ...invoiceData,
-  //       invoiceId,
-  //       chapaLink: response.data.data.checkout_url,
-  //       status: 'pending' as const,
-  //       chapaReference: reference,
-  //       metadata: {},
-  //       createdAt: new Date(),
-  //       updatedAt: new Date(),
-  //       paidAt: undefined
-  //     };
-
-  //     // Add the invoice to the user
-  //     const updatedUser = await user.addInvoice(newInvoice as any);
-      
-  //     if (!updatedUser) {
-  //       throw new Error('Failed to save invoice');
-  //     }
-
-  //     // Find the newly added invoice
-  //     const savedInvoice = updatedUser.invoices.find(
-  //       inv => inv.invoiceId === newInvoice.invoiceId
-  //     );
-
-  //     if (!savedInvoice) {
-  //       throw new Error('Failed to retrieve saved invoice');
-  //     }
-
-  //     return {
-  //       paymentLink: response.data.data.checkout_url,
-  //       invoiceId: savedInvoice.invoiceId
-  //     };
-  //   } catch (error) {
-  //     console.error('Error initializing payment:', error);
-  //     throw new Error('Failed to initialize payment');
-  //   }
-  // }
-// In payment.service.ts, update the initializePayment method
   async initializePayment(
     user: IRegistration,
     invoiceData: {
@@ -185,29 +98,28 @@ export class PaymentService {
         throw new Error('Failed to initialize payment with Chapa');
       }
 
-      // Create a new invoice object
-      const newInvoice = {
-        ...invoiceData,
-        invoiceId,
+      // Import Invoice model
+      const { Invoice } = await import('../models/invoice.model');
+      
+      // Save invoice to database
+      const invoice = new Invoice({
+        invoiceId: reference, // Using tx_ref (reference) as invoiceId for consistency
+        user: user._id,
+        amount: invoiceData.amount,
+        status: 'pending',
         chapaLink: response.data.data.checkout_url,
-        status: 'pending' as const,
-        chapaReference: reference,
-        metadata: {},
+        chapaReference: reference, // Storing tx_ref
+        tx_ref: reference,
+        metadata: {
+          eventName: invoiceData.eventName,
+          place: invoiceData.place,
+          time: invoiceData.time
+        },
         createdAt: new Date(),
-        updatedAt: new Date(),
-        paidAt: undefined
-      };
+        updatedAt: new Date()
+      });
 
-      // Save the invoice directly using the model
-      const updatedUser = await Registration.findByIdAndUpdate(
-        user._id,
-        { $push: { invoices: newInvoice } },
-        { new: true, useFindAndModify: false }
-      );
-
-      if (!updatedUser) {
-        throw new Error('Failed to save invoice: User not found');
-      }
+      await invoice.save();
 
       // Send Telegram message if user has telegram data
       const telegramId = user.telegramData?.chatId || user.telegramData?.id;
@@ -245,7 +157,7 @@ Please complete your payment of <b>${invoiceData.amount} ETB</b> using the link 
 
       return {
         paymentLink: response.data.data.checkout_url,
-        invoiceId: newInvoice.invoiceId
+        invoiceId: reference
       };
     } catch (error: any) {
       console.error('Error in initializePayment:', error);
@@ -255,107 +167,94 @@ Please complete your payment of <b>${invoiceData.amount} ETB</b> using the link 
       throw new Error(error instanceof Error ? error.message : 'Failed to initialize payment');
     }
   }
-  /**
-   * Verify a payment with Chapa
-   */
-  async verifyPayment(reference: string): Promise<{
-    success: boolean;
-    message: string;
-    invoice?: IInvoice;
-  }> {
-    try {
-      // First verify with Chapa
-      const response = await axios.get<ChapaVerificationResponse>(
-        `${this.chapaBaseUrl}/transaction/verify/${reference}`,
-        {
-          headers: {
-            Authorization: `Bearer ${this.chapaSecretKey}`,
-          },
-        }
-      );
-
-      const responseData = response.data;
-      
-      if (responseData.status !== 'success' || responseData.data?.status !== 'success') {
-        return { 
-          success: false, 
-          message: responseData.message || 'Payment verification failed' 
-        };
-      }
-
-      // Find the user with this invoice reference
-      const user = await Registration.findOne({
-        'invoices.chapaReference': reference
-      });
-
-      if (!user) {
-        return { success: false, message: 'Invoice not found' };
-      }
-
-      // Find and update the invoice status
-      const invoice = user.invoices.find(inv => inv.chapaReference === reference);
-      if (!invoice) {
-        return { success: false, message: 'Invoice not found' };
-      }
-
-      const updateResult = await user.updateInvoiceStatus(invoice.invoiceId, 'paid', reference);
-      
-      if (!updateResult) {
-        return { success: false, message: 'Failed to update invoice status' };
-      }
-
-      return {
-        success: true,
-        message: 'Payment verified successfully',
-        invoice: {
-          ...invoice.toObject(),
-          status: 'paid' as const,
-          paidAt: new Date(),
-          chapaReference: reference
-        } as IInvoice
-      };
-    } catch (error) {
-      console.error('Error verifying payment:', error);
-      return { success: false, message: 'Error verifying payment' };
-    }
-  }
 
   /**
    * Get payment status
    */
-  async getPaymentStatus(reference: string): Promise<{
-    status: 'pending' | 'paid' | 'failed' | 'not_found';
-    invoice?: IInvoice;
-  }> {
+  async getPaymentStatus(reference: string): Promise<{ status: string }> {
     try {
-      const user = await Registration.findOne({
-        'invoices.chapaReference': reference
-      });
-
-      if (!user) {
-        return { status: 'not_found' };
-      }
-
-      const invoice = user.invoices.find(inv => inv.chapaReference === reference);
+      // Import Invoice model
+      const { Invoice } = await import('../models/invoice.model');
+      
+      const invoice = await Invoice.findOne({ tx_ref: reference });
+      
       if (!invoice) {
-        return { status: 'not_found' };
+        throw new Error('Invoice not found');
       }
 
-      // If already paid in our system, return that
-      if (invoice.status === 'paid') {
-        return { status: 'paid', invoice };
-      }
-
-      // Otherwise, verify with Chapa
-      const verification = await this.verifyPayment(reference);
-      if (verification.success && verification.invoice) {
-        return { status: 'paid', invoice: verification.invoice };
-      }
-
-      return { status: invoice.status as 'pending' | 'failed', invoice };
+      return { status: invoice.status };
     } catch (error) {
-      console.error('Error getting payment status:', error);
-      return { status: 'failed' };
+      console.error('Get payment status error:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Verify payment and update status
+   */
+  async verifyPayment(reference: string): Promise<{ success: boolean; message: string; invoice?: any }> {
+    try {
+      console.log(`Verifying payment for reference: ${reference}`);
+      
+      // 1. Verify with Chapa
+      const response = await axios.get<ChapaVerificationResponse>(
+        `https://api.chapa.co/v1/transaction/verify/${reference}`,
+        {
+          headers: {
+            'Authorization': `Bearer ${process.env.CHAPA_SECRET_KEY}`
+          }
+        }
+      );
+
+      if (response.data.status !== 'success') {
+        return { success: false, message: 'Payment verification failed' };
+      }
+
+      // 2. Update Invoice status in database
+      const { Invoice } = await import('../models/invoice.model');
+      const invoice = await Invoice.findOne({ tx_ref: reference });
+
+      if (!invoice) {
+        return { success: false, message: 'Invoice not found' };
+      }
+
+      if (invoice.status === 'paid') {
+        return { success: true, message: 'Payment already verified', invoice };
+      }
+
+      invoice.status = 'paid';
+      invoice.paidAt = new Date();
+      await invoice.save();
+
+      // 3. Update EventRegistration status if linked
+      if (invoice.metadata && invoice.metadata.eventName) {
+         const { EventRegistration } = await import('../models/event-registration.model');
+         const { Event } = await import('../models/events.model');
+         
+         const event = await Event.findOne({ name: invoice.metadata.eventName });
+         
+         if (event) {
+            const registration = await EventRegistration.findOne({
+              user: invoice.user,
+              event: event._id
+            });
+
+            if (registration) {
+              registration.status = 'confirmed';
+              await registration.save();
+            }
+         }
+      }
+
+      return { 
+        success: true, 
+        message: 'Payment verified successfully', 
+        invoice 
+      };
+
+    } catch (error) {
+      console.error('Verify payment error:', error);
+      return { success: false, message: 'Payment verification failed' };
     }
   }
 
@@ -364,16 +263,14 @@ Please complete your payment of <b>${invoiceData.amount} ETB</b> using the link 
    */
   async bulkInitializePayment(eventId: string): Promise<{ success: number; failed: number; total: number }> {
     try {
+      // Import EventRegistration model
+      const { EventRegistration } = await import('../models/event-registration.model');
+      
       // Find users registered for this event but not yet paid/initiated
-      // We need to query the registeredEvents array
-      const users = await Registration.find({
-        'registeredEvents': {
-          $elemMatch: {
-            eventId: eventId,
-            status: 'registered'
-          }
-        }
-      });
+      const registrations = await EventRegistration.find({
+        event: eventId,
+        status: 'registered'
+      }).populate('user');
 
       let successCount = 0;
       let failedCount = 0;
@@ -386,10 +283,12 @@ Please complete your payment of <b>${invoiceData.amount} ETB</b> using the link 
         throw new Error('Event not found');
       }
 
-      console.log(`Found ${users.length} users to process for event ${event.name}`);
+      console.log(`Found ${registrations.length} users to process for event ${event.name}`);
 
-      for (const user of users) {
+      for (const reg of registrations) {
         try {
+          const user = reg.user as any; // Cast to any to access user properties since populate is used
+          
           // Initialize payment
           await this.initializePayment(user, {
             eventName: event.name,
@@ -398,16 +297,13 @@ Please complete your payment of <b>${invoiceData.amount} ETB</b> using the link 
             time: event.date
           });
 
-          // Update status in registeredEvents
-          const eventIndex = user.registeredEvents.findIndex(e => e.eventId.toString() === eventId);
-          if (eventIndex !== -1) {
-            user.registeredEvents[eventIndex].status = 'payment_initiated';
-            await user.save();
-          }
+          // Update status in EventRegistration
+          reg.status = 'payment_initiated';
+          await reg.save();
 
           successCount++;
         } catch (error) {
-          console.error(`Failed to initialize payment for user ${user._id}:`, error);
+          console.error(`Failed to initialize payment for registration ${reg._id}:`, error);
           failedCount++;
         }
       }
@@ -415,7 +311,7 @@ Please complete your payment of <b>${invoiceData.amount} ETB</b> using the link 
       return {
         success: successCount,
         failed: failedCount,
-        total: users.length
+        total: registrations.length
       };
     } catch (error) {
       console.error('Error in bulkInitializePayment:', error);

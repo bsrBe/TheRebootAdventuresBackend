@@ -73,9 +73,25 @@ export const getUserByTelegramId = async (req: Request, res: Response): Promise<
       return;
     }
 
+    // Fetch user's event registrations
+    const { EventRegistration } = await import('../models/event-registration.model');
+    const registrations = await EventRegistration.find({ user: user._id })
+      .select('event status registrationDate')
+      .lean();
+
+    // Format registrations to match the old structure
+    const registeredEvents = registrations.map(reg => ({
+      eventId: reg.event.toString(),
+      status: reg.status,
+      registeredAt: reg.registrationDate
+    }));
+
     res.json({
       success: true,
-      data: user
+      data: {
+        ...user.toJSON(),
+        registeredEvents
+      }
     });
   } catch (error) {
     console.error('Get user by Telegram ID error:', error);

@@ -1,5 +1,5 @@
 import mongoose, { Schema, Document, Model } from 'mongoose';
-import { IRegistration, IInvoice, ITelegramData, IRegistrationModel } from '../interfaces/user.interface';
+import { IRegistration, IRegistrationModel, ITelegramData } from '../interfaces/user.interface';
 
 // Define the schema for the Telegram data
 const telegramDataSchema = new Schema<ITelegramData>({
@@ -15,55 +15,7 @@ const telegramDataSchema = new Schema<ITelegramData>({
   photo_url: { type: String }
 }, { _id: false });
 
-// Define the schema for invoices
-const invoiceSchema = new Schema<IInvoice>({
-  _id: { type: Schema.Types.ObjectId, auto: true },
-  invoiceId: { 
-    type: String, 
-    required: true,
-    unique: true
-  },
-  eventName: { 
-    type: String, 
-    required: true,
-    trim: true
-  },
-  amount: { 
-    type: Number, 
-    required: true,
-    min: 0
-  },
-  place: { 
-    type: String, 
-    required: true,
-    trim: true
-  },
-  time: { 
-    type: Date, 
-    required: true
-  },
-  chapaLink: { 
-    type: String, 
-    required: true
-  },
-  status: {
-    type: String,
-    enum: ['pending', 'paid', 'cancelled', 'failed'],
-    default: 'pending'
-  },
-  chapaReference: {
-    type: String,
-    sparse: true
-  },
-  paidAt: {
-    type: Date,
-    default: null
-  },
-  metadata: {
-    type: Schema.Types.Mixed,
-    default: {}
-  }
-}, { timestamps: true, _id: false });
+
 
 // Main registration schema
 const registrationSchema = new Schema<IRegistration>(
@@ -128,20 +80,6 @@ const registrationSchema = new Schema<IRegistration>(
       type: telegramDataSchema,
       default: null
     },
-    registeredEvents: [{
-      eventId: { type: Schema.Types.ObjectId, ref: 'Event' },
-      eventName: String,
-      registrationDate: { type: Date, default: Date.now },
-      status: { 
-        type: String, 
-        enum: ['registered', 'payment_initiated', 'paid', 'cancelled'],
-        default: 'registered'
-      }
-    }],
-    invoices: {
-      type: [invoiceSchema],
-      default: []
-    },
     isAdmin: {
       type: Boolean,
       default: false
@@ -166,44 +104,12 @@ const registrationSchema = new Schema<IRegistration>(
 );
 
 // Indexes
-registrationSchema.index({ 'telegramData.id': 1 }, { sparse: true });
-registrationSchema.index({ event: 1 });
-registrationSchema.index({ paymentStatus: 1 });
+registrationSchema.index({ 'telegramData.id': 1 }, { unique: true, sparse: true });
 
 // Add instance methods
-registrationSchema.methods.addInvoice = async function(invoice: IInvoice): Promise<IRegistration> {
-  this.invoices.push(invoice);
-  return this.save();
-};
-
-registrationSchema.methods.updateInvoiceStatus = async function(
-  invoiceId: string, 
-  status: 'pending' | 'paid' | 'cancelled' | 'failed',
-  chapaReference?: string
-): Promise<IRegistration> {
-  const invoice = this.invoices.find((inv: IInvoice) => inv.invoiceId === invoiceId);
-  if (!invoice) {
-    throw new Error('Invoice not found');
-  }
-  
-  invoice.status = status;
-  if (status === 'paid') {
-    invoice.paidAt = new Date();
-  }
-  if (chapaReference) {
-    invoice.chapaReference = chapaReference;
-  }
-  
-  return this.save();
-};
-
 // Add static methods
 registrationSchema.statics.findByTelegramId = async function(telegramId: number): Promise<IRegistration | null> {
   return this.findOne({ 'telegramData.id': telegramId });
-};
-
-registrationSchema.statics.findWithPendingInvoices = async function(): Promise<IRegistration[]> {
-  return this.find({ 'invoices.status': 'pending' });
 };
 
 // Create and export the model

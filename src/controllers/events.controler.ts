@@ -144,25 +144,28 @@ export const signupForEvent = async (req: Request, res: Response): Promise<void>
     }
 
     // Check if already registered
-    const isRegistered = user.registeredEvents?.some(
-      (e) => e.eventId.toString() === eventId
-    );
+    // Import EventRegistration model
+    const { EventRegistration } = await import('../models/event-registration.model');
+    
+    const existingRegistration = await EventRegistration.findOne({
+      user: userId,
+      event: eventId
+    });
 
-    if (isRegistered) {
+    if (existingRegistration) {
       res.status(400).json({ success: false, error: 'User already registered for this event' });
       return;
     }
 
-    // Add to registeredEvents
-    user.registeredEvents = user.registeredEvents || [];
-    user.registeredEvents.push({
-      eventId: event._id as any,
-      eventName: event.name,
-      registrationDate: new Date(),
-      status: 'registered'
+    // Create new registration
+    const registration = new EventRegistration({
+      user: userId,
+      event: eventId,
+      status: 'registered',
+      priceAtRegistration: event.price
     });
 
-    await user.save();
+    await registration.save();
 
     res.status(200).json({
       success: true,

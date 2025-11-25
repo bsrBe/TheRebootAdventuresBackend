@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { paymentService } from '../services/payment.service';
 import { Registration } from '../models/user.model';
-import { IInvoice, IInvoiceBase } from '../interfaces/user.interface';
+
 import { check, validationResult } from 'express-validator';
 import { isAdmin } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validation.middleware';
@@ -92,7 +92,13 @@ export class PaymentController {
     try {
       const { reference } = req.params;
       
-      const { status, invoice } = await paymentService.getPaymentStatus(reference);
+      const { status } = await paymentService.getPaymentStatus(reference);
+      let invoice = null;
+      
+      if (status !== 'not_found') {
+         const { Invoice } = await import('../models/invoice.model');
+         invoice = await Invoice.findOne({ tx_ref: reference });
+      }
       
       if (status === 'not_found') {
         return res.status(404).json({
@@ -124,15 +130,15 @@ export class PaymentController {
     try {
       const { userId } = req.params;
       
-      const user = await Registration.findById(userId).select('invoices');
-      if (!user) {
-        return res.status(404).json({ message: 'User not found' });
-      }
+      // Import Invoice model
+      const { Invoice } = await import('../models/invoice.model');
+      
+      const invoices = await Invoice.find({ user: userId }).sort({ createdAt: -1 });
 
       return res.status(200).json({
         success: true,
         data: {
-          invoices: user.invoices
+          invoices
         }
       });
     } catch (error: any) {
@@ -151,16 +157,14 @@ export class PaymentController {
     try {
       const { userId, invoiceId } = req.params;
       
-      const user = await Registration.findOne({
-        _id: userId,
-        'invoices.invoiceId': invoiceId
+      // Import Invoice model
+      const { Invoice } = await import('../models/invoice.model');
+      
+      const invoice = await Invoice.findOne({ 
+        user: userId,
+        invoiceId: invoiceId 
       });
 
-      if (!user) {
-        return res.status(404).json({ message: 'Invoice not found' });
-      }
-
-      const invoice = user.invoices.find(inv => inv.invoiceId === invoiceId);
       if (!invoice) {
         return res.status(404).json({ message: 'Invoice not found' });
       }
@@ -192,55 +196,24 @@ export class PaymentController {
 
       const { status } = req.query;
       
+      // Import Invoice model
+      const { Invoice } = await import('../models/invoice.model');
+
       // Build the query
-      const query: any = { 'invoices': { $exists: true, $not: { $size: 0 } } };
+      const query: any = {};
       if (status) {
-        query['invoices.status'] = status;
+        query.status = status;
       }
 
-      // Find users with invoices
-      const users = await Registration.find(query).lean();
-
-      // Process the results
-      const result = users.flatMap(user => {
-        if (!user.invoices || !Array.isArray(user.invoices)) return [];
-        
-        return user.invoices
-          .filter(invoice => {
-            if (!invoice || typeof invoice !== 'object') return false;
-            return !status || invoice.status === status;
-          })
-          .map(invoice => ({
-            _id: invoice._id?.toString() || '',
-            invoice: {
-              _id: invoice._id?.toString() || '',
-              userId: user._id?.toString() || '',
-              invoiceId: invoice.invoiceId || '',
-              eventName: invoice.eventName || '',
-              amount: invoice.amount || 0,
-              place: invoice.place || '',
-              time: invoice.time ? new Date(invoice.time) : new Date(),
-              chapaLink: invoice.chapaLink || '',
-              status: invoice.status || 'pending',
-              createdAt: invoice.createdAt ? new Date(invoice.createdAt) : new Date(),
-              updatedAt: invoice.updatedAt ? new Date(invoice.updatedAt) : new Date(),
-              paidAt: invoice.paidAt ? new Date(invoice.paidAt) : null,
-              chapaReference: invoice.chapaReference,
-              metadata: invoice.metadata || {}
-            },
-            user: {
-              id: user._id?.toString() || '',
-              fullName: user.fullName || '',
-              email: user.email || '',
-              phoneNumber: user.phoneNumber || ''
-            }
-          }));
-      });
+      // Find invoices and populate user
+      const invoices = await Invoice.find(query)
+        .populate('user', 'fullName email phoneNumber')
+        .sort({ createdAt: -1 });
 
       return res.status(200).json({
         success: true,
         data: {
-          invoices: result
+          invoices
         }
       });
     } catch (error: any) {
@@ -265,32 +238,34 @@ export class PaymentController {
       let userDetails = null;
 
       if (tx_ref && typeof tx_ref === 'string') {
-        // Find the user and invoice associated with this reference
-        const user = await Registration.findOne({
-          'invoices.chapaReference': tx_ref
-        });
+        // Import Invoice model
+        const { Invoice } = await import('../models/invoice.model');
+        
+        // Find the invoice associated with this reference
+        const invoice = await Invoice.findOne({ tx_ref: tx_ref }).populate('user');
 
-        if (user) {
-          const invoice = user.invoices.find(inv => inv.chapaReference === tx_ref);
-          if (invoice) {
-            paymentDetails = invoice;
+        if (invoice) {
+          paymentDetails = invoice;
+          const user = invoice.user as any; // Cast to any to access user properties
+          
+          if (user) {
             userDetails = {
               fullName: user.fullName,
               email: user.email,
               phoneNumber: user.phoneNumber
             };
-            
-            // If status is still pending, we might want to verify it now
-            if (invoice.status === 'pending') {
-               try {
-                 const verification = await paymentService.verifyPayment(tx_ref);
-                 if (verification.success && verification.invoice) {
-                   paymentDetails = verification.invoice;
-                 }
-               } catch (err) {
-                 console.error('Auto-verification failed on success page:', err);
+          }
+          
+          // If status is still pending, we might want to verify it now
+          if (invoice.status === 'pending') {
+             try {
+               const verification = await paymentService.verifyPayment(tx_ref as string);
+               if (verification.success && verification.invoice) {
+                 paymentDetails = verification.invoice;
                }
-            }
+             } catch (err) {
+               console.error('Auto-verification failed on success page:', err);
+             }
           }
         }
       }

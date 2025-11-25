@@ -1,7 +1,6 @@
 import { Request, Response } from 'express';
 import { TelegramService } from '../services/telegram.service';
 import { Registration } from '../models/user.model';
-import { IInvoice } from '../interfaces/user.interface';
 
 export class TelegramController {
   private telegramService: TelegramService;
@@ -91,7 +90,7 @@ export class TelegramController {
       return this.telegramService.sendMessage(chatId, 'Welcome! Please use our web interface to register first.');
     }
 
-    // Update user's telegram data
+    // Update user's telegram data if they exist
     await Registration.findOneAndUpdate(
       { 'telegramData.id': userId },
       {
@@ -101,7 +100,7 @@ export class TelegramController {
           'telegramData.is_subscribed': true
         }
       },
-      { new: true, upsert: true }
+      { new: true }
     );
 
     await this.telegramService.sendMessage(
@@ -126,7 +125,10 @@ export class TelegramController {
       return this.telegramService.sendMessage(chatId, '❌ User not found. Please register first.');
     }
 
-    const invoices = user.invoices || [];
+    // Import Invoice model
+    const { Invoice } = await import('../models/invoice.model');
+    
+    const invoices = await Invoice.find({ user: user._id }).sort({ createdAt: -1 });
     
     if (invoices.length === 0) {
       return this.telegramService.sendMessage(chatId, 'You have no invoices yet.');
@@ -151,7 +153,14 @@ export class TelegramController {
       return this.telegramService.sendMessage(chatId, '❌ User not found.');
     }
 
-    const invoice = user.invoices.find(inv => inv.invoiceId === invoiceId);
+    // Import Invoice model
+    const { Invoice } = await import('../models/invoice.model');
+    
+    const invoice = await Invoice.findOne({ 
+      invoiceId: invoiceId,
+      user: user._id
+    });
+
     if (!invoice) {
       return this.telegramService.sendMessage(chatId, '❌ Invoice not found.');
     }
@@ -160,10 +169,12 @@ export class TelegramController {
       return this.telegramService.sendMessage(chatId, '✅ This invoice has already been paid.');
     }
 
+    const eventName = invoice.metadata?.eventName || 'Event';
+
     // Send the payment link
     await this.telegramService.sendMessage(
       chatId,
-      `💳 Please complete your payment for ${invoice.eventName} by clicking the button below.`,
+      `💳 Please complete your payment for ${eventName} by clicking the button below.`,
       {
         reply_markup: {
           inline_keyboard: [
@@ -196,18 +207,22 @@ export class TelegramController {
   /**
    * Send an invoice message
    */
-  private sendInvoiceMessage = async (chatId: string | number, invoice: IInvoice) => {
+  private sendInvoiceMessage = async (chatId: string | number, invoice: any) => {
     const statusEmoji = invoice.status === 'paid' ? '✅' : '⏳';
     const statusText = invoice.status === 'paid' 
       ? `Paid on ${new Date(invoice.paidAt!).toLocaleDateString()}` 
       : 'Pending payment';
 
+    const eventName = invoice.metadata?.eventName || 'Event';
+    const place = invoice.metadata?.place || 'Unknown Location';
+    const time = invoice.metadata?.time ? new Date(invoice.metadata.time).toLocaleString() : 'Unknown Time';
+
     const message = `
 📋 *Invoice #${invoice.invoiceId}* ${statusEmoji}\n\n` +
-      `🔹 *Event:* ${invoice.eventName}\n` +
+      `🔹 *Event:* ${eventName}\n` +
       `💵 *Amount:* ${invoice.amount} ETB\n` +
-      `📍 *Location:* ${invoice.place}\n` +
-      `📅 *Date & Time:* ${new Date(invoice.time).toLocaleString()}\n` +
+      `📍 *Location:* ${place}\n` +
+      `📅 *Date & Time:* ${time}\n` +
       `📌 *Status:* ${statusText}\n\n`;
 
     const options: any = {

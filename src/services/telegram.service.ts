@@ -1,8 +1,9 @@
 import axios from 'axios';
-import { IInvoice, IRegistration } from '../interfaces/user.interface';
+import { IRegistration } from '../interfaces/user.interface';
 import { Registration } from '../models/user.model';
 import { configDotenv } from 'dotenv';
 configDotenv()
+
 export class TelegramService {
   private readonly botToken: string;
   private readonly botApiUrl: string;
@@ -40,9 +41,10 @@ export class TelegramService {
   /**
    * Send an invoice to a user
    */
-  async sendInvoice(chatId: string | number, invoice: IInvoice): Promise<boolean> {
+  async sendInvoice(chatId: string | number, invoice: any): Promise<boolean> {
     try {
-      const { amount, eventName, chapaLink } = invoice;
+      const { amount, chapaLink, metadata } = invoice;
+      const eventName = metadata?.eventName || 'Event';
       
       // Create a payment button
       const replyMarkup = {
@@ -57,7 +59,7 @@ export class TelegramService {
       };
 
       const message = `
-💰 <b>Invoice for {eventName}</b>
+💰 <b>Invoice for ${eventName}</b>
 
 ` +
         `Amount: ${amount} ETB\n` +
@@ -90,15 +92,22 @@ export class TelegramService {
    */
   async sendPaymentReminder(invoiceId: string): Promise<boolean> {
     try {
-      const user = await Registration.findOne({ 'invoices.invoiceId': invoiceId });
+      // Import Invoice model
+      const { Invoice } = await import('../models/invoice.model');
+      
+      const invoice = await Invoice.findOne({ invoiceId }).populate('user');
+      
+      if (!invoice) return false;
+      if (invoice.status === 'paid') return false;
+
+      const user = invoice.user as any;
       if (!user || !user.telegramData?.chatId) return false;
 
-      const invoice = user.invoices.find(inv => inv.invoiceId === invoiceId);
-      if (!invoice || invoice.status === 'paid') return false;
+      const eventName = invoice.metadata?.eventName || 'Event';
 
       const message = `
 ⏰ <b>Payment Reminder</b>\n\n` +
-        `Your invoice for ${invoice.eventName} is still pending.\n` +
+        `Your invoice for ${eventName} is still pending.\n` +
         `Amount: ${invoice.amount} ETB\n` +
         `Due: ${invoice.createdAt ? new Date(invoice.createdAt).toLocaleDateString() : 'N/A'}\n\n` +
         `Please complete your payment to secure your spot!`;
@@ -113,16 +122,18 @@ export class TelegramService {
   /**
    * Send payment confirmation
    */
-  async sendPaymentConfirmation(invoice: IInvoice, userId: string): Promise<boolean> {
+  async sendPaymentConfirmation(invoice: any, userId: string): Promise<boolean> {
     try {
       const user = await Registration.findById(userId);
       if (!user || !user.telegramData?.chatId) return false;
 
+      const eventName = invoice.metadata?.eventName || 'Event';
+
       const message = `
 ✅ <b>Payment Confirmed!</b>\n\n` +
-        `Thank you for your payment for ${invoice.eventName}.\n` +
+        `Thank you for your payment for ${eventName}.\n` +
         `Amount: ${invoice.amount} ETB\n` +
-        `Transaction ID: ${invoice.chapaReference}\n\n` +
+        `Transaction ID: ${invoice.chapaReference || invoice.tx_ref}\n\n` +
         `We look forward to seeing you at the event!`;
 
       return this.sendMessage(user.telegramData.chatId, message);
@@ -137,15 +148,21 @@ export class TelegramService {
    */
   async sendEventReminder(eventId: string, message: string): Promise<{ success: number; failed: number }> {
     try {
-      // Find all users who have paid for this event
-      const users = await Registration.find({
-        'invoices.eventId': eventId,
-        'invoices.status': 'paid'
-      });
+      // Import Invoice model
+      const { Invoice } = await import('../models/invoice.model');
+      
+      // Find all paid invoices for this event (if we had eventId in invoice, which we added to model)
+      // Or find via EventRegistration
+      const { EventRegistration } = await import('../models/event-registration.model');
+      
+      const registrations = await EventRegistration.find({
+        event: eventId,
+        status: 'confirmed' // or 'paid'
+      }).populate('user');
 
-      const userIds = users
-        .filter(user => user.telegramData?.chatId)
-        .map(user => user.telegramData!.chatId!);
+      const userIds = registrations
+        .map(reg => (reg.user as any).telegramData?.chatId)
+        .filter(chatId => chatId);
 
       return this.broadcastMessage(userIds, message);
     } catch (error) {
