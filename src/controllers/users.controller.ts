@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { IRegistration, IRegistrationInput } from '../interfaces/user.interface';
 import { Registration } from '../models/user.model';
+import { EventRegistration } from '../models/event-registration.model';
 import { Error as MongooseError } from 'mongoose';
 
 export const registerUser = async (req: Request, res: Response): Promise<void> => {
@@ -9,6 +10,18 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
       ...req.body,
       telegramData: req.body.telegramData || null
     };
+
+    // Check if user with this Telegram ID already exists
+    if (registrationData.telegramData?.id) {
+      const existingUser = await Registration.findOne({ 'telegramData.id': registrationData.telegramData.id });
+      if (existingUser) {
+        res.status(400).json({
+          success: false,
+          error: 'You are already registered with this Telegram account'
+        });
+        return;
+      }
+    }
     
     const registration = new Registration(registrationData);
     await registration.save();
@@ -74,7 +87,6 @@ export const getUserByTelegramId = async (req: Request, res: Response): Promise<
     }
 
     // Fetch user's event registrations
-    const { EventRegistration } = await import('../models/event-registration.model');
     const registrations = await EventRegistration.find({ user: user._id })
       .select('event status registrationDate')
       .lean();
