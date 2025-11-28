@@ -18,9 +18,9 @@ const server = http.createServer(app);
 
 // Middleware
 app.use(cors({
-  origin: process.env.CORS_ORIGIN?.split(','),
+  origin: process.env.CORS_ORIGIN?.split(',') || '*', // Fallback to * for dev if not set
   credentials: true,
-  allowedHeaders: ['Content-Type', 'Authorization']
+  allowedHeaders: ['Content-Type', 'Authorization', 'Cache-Control', 'X-Requested-With', 'Pragma']
 }));
 app.use(express.json());
 app.use(bodyParser.json());
