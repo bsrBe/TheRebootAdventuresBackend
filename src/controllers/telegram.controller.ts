@@ -117,29 +117,60 @@ export class TelegramController {
 
     const photoUrl = `${process.env.APP_URL}/images/welcome.jpg`;
     
-    await this.telegramService.sendPhoto(
-      chatId,
-      photoUrl,
-      welcomeCaption,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: '🌐 Open Web App',
-                web_app: { url: process.env.FRONTEND_URL || 'https://your-frontend-url.com' }
-              }
-            ],
-            [
-              {
-                text: '📋 My Invoices',
-                callback_data: 'myinvoices'
-              }
+    try {
+      const sent = await this.telegramService.sendPhoto(
+        chatId,
+        photoUrl,
+        welcomeCaption,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: '🌐 Open Web App',
+                  web_app: { url: process.env.FRONTEND_URL || 'https://your-frontend-url.com' }
+                }
+              ],
+              [
+                {
+                  text: '📋 My Invoices',
+                  callback_data: 'myinvoices'
+                }
+              ]
             ]
-          ]
+          }
         }
+      );
+
+      if (!sent) {
+        throw new Error('Failed to send photo');
       }
-    );
+    } catch (error) {
+      console.error('Failed to send welcome photo, falling back to text message:', error);
+      // Fallback to text message
+      await this.telegramService.sendMessage(
+        chatId,
+        welcomeCaption,
+        {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: '🌐 Open Web App',
+                  web_app: { url: process.env.FRONTEND_URL || 'https://your-frontend-url.com' }
+                }
+              ],
+              [
+                {
+                  text: '📋 My Invoices',
+                  callback_data: 'myinvoices'
+                }
+              ]
+            ]
+          }
+        }
+      );
+    }
   };
 
   /**
