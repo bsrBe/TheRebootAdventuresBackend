@@ -76,7 +76,7 @@ export const getUsers = async (req: Request, res: Response): Promise<void> => {
 export const getUserByTelegramId = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const user = await Registration.findOne({ 'telegramData.id': id });
+    const user = await Registration.findOne({ 'telegramData.id': Number(id) });
 
     if (!user) {
       res.status(404).json({
