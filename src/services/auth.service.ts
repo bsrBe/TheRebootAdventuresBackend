@@ -38,7 +38,7 @@ export class AuthService {
     );
 
     // Send invitation email
-    const setupUrl = `${process.env.ADMIN_URL}/auth/setup?token=${invitationToken}`;
+    const setupUrl = `${process.env.ADMIN_URL}/setup?token=${invitationToken}`;
     await sendEmail({
       to: email,
       subject: 'Admin Account Invitation',

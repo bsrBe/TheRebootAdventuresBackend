@@ -2,8 +2,6 @@ import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
 import { Admin, AdminStatus, IAdmin } from '../models/admin.model';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
-
 // Define a simplified admin type for request objects
 type RequestAdmin = {
   _id: any;
@@ -43,8 +41,10 @@ export const authenticateAdmin = async (req: Request, res: Response, next: NextF
       return res.status(401).json({ message: 'No token, authorization denied' });
     }
 
-    // Verify token
+    // Verify token - use process.env.JWT_SECRET directly to ensure it's read at runtime
+    const JWT_SECRET = process.env.JWT_SECRET || 'your-secret-key';
     const decoded = jwt.verify(token, JWT_SECRET) as { id: string };
+    
     const admin = await Admin.findById(decoded.id).select('-passwordHash').lean();
 
     if (!admin || admin.status !== AdminStatus.ACTIVE) {

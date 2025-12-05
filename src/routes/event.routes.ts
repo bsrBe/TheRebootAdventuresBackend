@@ -1,19 +1,25 @@
 import { Router } from 'express';
+import { authenticateAdmin } from '../middleware/admin.auth.middleware';
 import {
   createEvent,
   getEvents,
   getEventById,
   updateEventStatus,
-  signupForEvent
+  signupForEvent,
+  updateEvent,
+  deleteEvent
 } from '../controllers/events.controler';
 
 const router = Router();
-
-// Admin routes (can later be protected by middleware)
-router.post('/', createEvent); // Create new event
+router.post('/:id/signup', signupForEvent);
 router.get('/', getEvents); // Get all events
 router.get('/:id', getEventById); // Get single event
+// Protect all admin routes
+router.use(authenticateAdmin);
+
+router.post('/', createEvent); // Create new event
 router.patch('/:id/status', updateEventStatus); // Update event status
-router.post('/:id/signup', signupForEvent); // Sign up for an event
+router.put('/:id', updateEvent); // Full update of event
+router.delete('/:id', deleteEvent); // Delete event
 
 export default router;

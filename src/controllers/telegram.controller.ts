@@ -10,6 +10,77 @@ export class TelegramController {
   }
 
   /**
+   * Broadcast a custom announcement to all subscribed Telegram users
+   * Admin-only route (protected at router level)
+   */
+  public broadcastAnnouncement = async (req: Request, res: Response) => {
+    try {
+      const { title, message, location, time } = req.body as {
+        title?: string;
+        message?: string;
+        location?: string;
+        time?: string;
+      };
+
+      if (!title && !message && !location && !time) {
+        return res.status(400).json({ success: false, message: 'At least one field (title, message, location, time) is required' });
+      }
+
+      // Load all users who have interacted with the bot and stayed subscribed
+      const users = await Registration.find({
+        'telegramData.chatId': { $ne: null },
+        'telegramData.is_subscribed': true,
+      });
+
+      const chatIds = users
+        .map((u) => (u as any).telegramData?.chatId)
+        .filter((id) => id !== null && id !== undefined);
+
+      if (chatIds.length === 0) {
+        return res.status(200).json({ success: true, message: 'No subscribed Telegram users to notify', data: { success: 0, failed: 0 } });
+      }
+
+      const parts: string[] = [];
+      if (title) {
+        parts.push(`📢 <b>${title}</b>`);
+      }
+      if (message) {
+        parts.push('', message);
+      }
+      if (location) {
+        parts.push('', `📍 <b>Location:</b> ${location}`);
+      }
+      if (time) {
+        const formatted = new Date(time).toLocaleString();
+        parts.push('', `🕒 <b>Time:</b> ${formatted}`);
+      }
+
+      parts.push('', 'Tap the button below to open the web app.');
+
+      const text = parts.join('\n');
+
+      const frontendUrl = process.env.FRONTEND_URL || 'https://your-frontend-url.com';
+      const replyMarkup = {
+        inline_keyboard: [
+          [
+            {
+              text: '🌐 Open Web App',
+              web_app: { url: frontendUrl },
+            },
+          ],
+        ],
+      };
+
+      const result = await this.telegramService.broadcastMessage(chatIds, text, { reply_markup: replyMarkup });
+
+      return res.status(200).json({ success: true, message: 'Broadcast sent', data: result });
+    } catch (error) {
+      console.error('Error sending broadcast announcement:', error);
+      return res.status(500).json({ success: false, message: 'Failed to send broadcast' });
+    }
+  };
+
+  /**
    * Handle Telegram webhook updates
    */
   public handleWebhook = async (req: Request, res: Response) => {

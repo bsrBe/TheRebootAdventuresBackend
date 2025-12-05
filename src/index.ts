@@ -26,8 +26,12 @@ app.use(express.json());
 app.use(bodyParser.json());
 app.use(express.static('public')); // Serve static files from public directory
 // Connect to MongoDB
-const MONGODB_URI = process.env.MONGODB_URI || 'mongodb://localhost:27017/rebbot-adventures';
+const MONGODB_URI = process.env.MONGODB_URI;
 
+if (!MONGODB_URI) {
+  console.error('Error: MONGODB_URI is not defined in environment variables');
+  process.exit(1);
+}
 mongoose
   .connect(MONGODB_URI)
   .then(() => {

@@ -103,9 +103,13 @@ export class TelegramService {
   /**
    * Send bulk messages to multiple users
    */
-  async broadcastMessage(userIds: (string | number)[], message: string): Promise<{ success: number; failed: number }> {
+  async broadcastMessage(
+    userIds: (string | number)[],
+    message: string,
+    options: any = {}
+  ): Promise<{ success: number; failed: number }> {
     const results = await Promise.allSettled(
-      userIds.map(userId => this.sendMessage(userId, message))
+      userIds.map(userId => this.sendMessage(userId, message, options))
     );
 
     return {

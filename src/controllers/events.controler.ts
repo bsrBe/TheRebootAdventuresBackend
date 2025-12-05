@@ -1,6 +1,8 @@
 import { Request, Response } from 'express';
 import { Event } from '../models/events.model';
 import { Error as MongooseError } from 'mongoose';
+import { Registration } from '../models/user.model';
+import { TelegramService } from '../services/telegram.service';
 
 /**
  * @desc Create new event (Admin only)
@@ -20,6 +22,48 @@ export const createEvent = async (req: Request, res: Response): Promise<void> =>
     });
 
     await event.save();
+
+    // Fire-and-forget: notify all Telegram users about the new event
+    (async () => {
+      try {
+        const telegramUsers = await Registration.find({
+          'telegramData.chatId': { $ne: null },
+          'telegramData.is_subscribed': true
+        });
+
+        const chatIds = telegramUsers
+          .map(user => (user as any).telegramData?.chatId)
+          .filter((id: any) => id !== null && id !== undefined);
+
+        if (chatIds.length === 0) {
+          return;
+        }
+
+        const telegramService = new TelegramService();
+        const frontendUrl = process.env.FRONTEND_URL || 'https://your-frontend-url.com';
+
+        const message =
+          `🐴 <b>New Event Coming Up!</b>\n\n` +
+          `📍 <b>${event.name}</b>\n` +
+          (event.description ? `${event.description}\n\n` : '\n') +
+          `Tap the button below to view details and sign up.`;
+
+        const replyMarkup = {
+          inline_keyboard: [
+            [
+              {
+                text: '🌐 Open Web App',
+                web_app: { url: `${frontendUrl}/events` }
+              }
+            ]
+          ]
+        };
+
+        await telegramService.broadcastMessage(chatIds, message, { reply_markup: replyMarkup });
+      } catch (notifyError) {
+        console.error('Failed to broadcast new event notification:', notifyError);
+      }
+    })();
 
     res.status(201).json({
       success: true,
@@ -178,6 +222,43 @@ export const signupForEvent = async (req: Request, res: Response): Promise<void>
 
   } catch (error) {
     console.error('Signup for event error:', error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
+/**
+ * @desc Update an event (full edit) - Admin only
+ * @route PUT /api/events/:id
+ */
+export const updateEvent = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const updateData = req.body;
+    const event = await Event.findByIdAndUpdate(req.params.id, updateData, { new: true, runValidators: true });
+    if (!event) {
+      res.status(404).json({ success: false, error: 'Event not found' });
+      return;
+    }
+    res.json({ success: true, message: 'Event updated', data: event });
+  } catch (error) {
+    console.error('Update event error:', error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
+
+/**
+ * @desc Delete an event - Admin only
+ * @route DELETE /api/events/:id
+ */
+export const deleteEvent = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const event = await Event.findByIdAndDelete(req.params.id);
+    if (!event) {
+      res.status(404).json({ success: false, error: 'Event not found' });
+      return;
+    }
+    res.json({ success: true, message: 'Event deleted' });
+  } catch (error) {
+    console.error('Delete event error:', error);
     res.status(500).json({ success: false, error: 'Server error' });
   }
 };

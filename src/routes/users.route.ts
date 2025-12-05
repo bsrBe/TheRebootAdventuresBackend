@@ -1,14 +1,25 @@
 import { Router } from 'express';
-import { registerUser, getUsers, getUserByTelegramId } from '../controllers/users.controller';
+import { authenticateAdmin } from '../middleware/admin.auth.middleware';
+import {
+  registerUser,
+  getUsers,
+  getUserByTelegramId,
+  updateUser,
+  deleteUser,
+  exportUsers,
+} from '../controllers/users.controller';
 
 const router = Router();
 
-// User routes
-router
-  .route('/')
-  .post(registerUser)
-  .get(getUsers);
-
+// Public routes (registration and lookup)
+router.post('/', registerUser);
+router.get('/', getUsers);
 router.get('/telegram/:id', getUserByTelegramId);
+
+// Admin-protected routes
+router.use(authenticateAdmin);
+router.get('/export', exportUsers);
+router.put('/:id', updateUser);
+router.delete('/:id', deleteUser);
 
 export default router;

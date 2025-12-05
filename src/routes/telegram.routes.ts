@@ -1,5 +1,6 @@
 import { Router } from 'express';
 import { telegramController } from '../controllers/telegram.controller';
+import { authenticateAdmin } from '../middleware/admin.auth.middleware';
 
 const router = Router();
 
@@ -42,5 +43,12 @@ router.get('/set-webhook', async (req, res) => {
     return res.status(500).json({ success: false, message: 'Failed to set webhook' });
   }
 });
+
+/**
+ * @route POST /api/telegram/broadcast
+ * @desc Send a custom broadcast message to all subscribed Telegram users
+ * @access Private (Admin)
+ */
+router.post('/broadcast', authenticateAdmin, telegramController.broadcastAnnouncement);
 
 export default router;
