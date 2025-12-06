@@ -17,7 +17,7 @@ export class TelebirrService {
    * Verify a Telebirr transaction by scraping the receipt page
    */
   async verifyTransaction(transactionId: string): Promise<TelebirrReceipt> {
-    const maxRetries = 3;
+    const maxRetries = 1; // Reduced from 3 to 1 to fail fast
     let attempt = 0;
     
     while (attempt < maxRetries) {
@@ -33,7 +33,7 @@ export class TelebirrService {
             'Cache-Control': 'no-cache',
             'Pragma': 'no-cache'
           },
-          timeout: 60000 // Increased to 60 seconds
+          timeout: 15000 // Reduced to 15 seconds
         });
 
         const $ = cheerio.load(response.data as string);
@@ -43,29 +43,75 @@ export class TelebirrService {
           throw new Error('Invalid transaction ID');
         }
 
-        // Extract data - Note: Selectors need to be adjusted based on actual page structure
-        // Assuming a standard key-value structure in tables or divs
+        // Extract data using specific selectors based on the receipt structure
         
-        // Helper to find value by label
-        const findValueByLabel = (label: string): string => {
-          // Look for elements containing the label, then find the corresponding value
-          // This is a generic approach; might need refinement
-          const labelEl = $(`*:contains("${label}")`).last();
-          if (labelEl.length) {
-              // Try next sibling or parent's next sibling
-              let value = labelEl.next().text().trim();
-              if (!value) value = labelEl.parent().next().text().trim(); // If label is in a td/div
-              if (!value) value = labelEl.parent().find('.value, span:not(.label)').text().trim();
-              return value;
-          }
-          return '';
-        };
+        // 1. Extract Payer/Sender and Receiver
+        // Look for "Credited Party name" for receiver
+        const receiverLabel = $('td:contains("Credited Party name"), div:contains("Credited Party name")').last();
+        const receiverName = receiverLabel.next().text().trim() || 
+                             receiverLabel.parent().next().text().trim() || 
+                             'Unknown';
 
-        // These selectors are hypothetical and MUST be verified against real HTML
-        const senderName = findValueByLabel('Payer') || findValueByLabel('Sender') || 'Unknown';
-        const receiverName = findValueByLabel('Receiver') || findValueByLabel('Payee') || 'Unknown';
-        const amountStr = findValueByLabel('Amount') || '0';
-        const date = findValueByLabel('Date') || findValueByLabel('Time') || new Date().toISOString();
+        const senderLabel = $('td:contains("Payer Name"), div:contains("Payer Name")').last();
+        const senderName = senderLabel.next().text().trim() || 
+                           senderLabel.parent().next().text().trim() || 
+                           'Unknown';
+
+        // 2. Extract Amount and Date from the "Invoice details" table
+        // The table has headers in one row and values in the next
+        // We look for the header "Settled Amount" and "Payment date"
+        
+        let amountStr = '0';
+        let date = new Date().toISOString();
+
+        // Find the index of the columns
+        let amountIndex = -1;
+        let dateIndex = -1;
+        
+        // Iterate through all table rows to find the header row
+        $('tr').each((i, row) => {
+            const cells = $(row).find('td, th');
+            cells.each((j, cell) => {
+                const text = $(cell).text().trim();
+                if (text.includes('Settled Amount')) amountIndex = j;
+                if (text.includes('Payment date')) dateIndex = j;
+            });
+            
+            // If we found headers, look at the next row for values
+            if (amountIndex !== -1 || dateIndex !== -1) {
+                const nextRow = $(row).next('tr');
+                if (nextRow.length) {
+                    const valueCells = nextRow.find('td');
+                    
+                    if (amountIndex !== -1 && valueCells.eq(amountIndex).length) {
+                        const amountText = valueCells.eq(amountIndex).text().trim();
+                        // Clean amount string (remove ETB, commas, " Birr")
+                        const amountVal = parseFloat(amountText.replace(/[^0-9.]/g, ''));
+                        if (!isNaN(amountVal)) {
+                             amountStr = amountText;
+                        }
+                    }
+                    
+                    if (dateIndex !== -1 && valueCells.eq(dateIndex).length) {
+                         const dateText = valueCells.eq(dateIndex).text().trim();
+                         if (dateText) {
+                             date = dateText;
+                         }
+                    }
+                }
+                // Reset indices to avoid false positives in other tables if any (though unlikely to have same headers)
+                // But we should break if we found both. 
+                return false; // Break loop
+            }
+        });
+
+        // Fallback if table parsing failed (e.g. mobile view might use divs)
+        if (amountStr === '0') {
+             const amountLabel = $('*:contains("Settled Amount")').last();
+             if (amountLabel.length) {
+                 amountStr = amountLabel.next().text().trim() || amountLabel.parent().next().text().trim();
+             }
+        }
 
         // Clean amount string (remove ETB, commas)
         const amount = parseFloat(amountStr.replace(/[^0-9.]/g, ''));
@@ -100,7 +146,7 @@ export class TelebirrService {
              throw error;
         }
         
-        throw new Error('Failed to verify transaction. Please check the ID and try again.');
+        throw new Error('Failed to verify transaction. Please check the transaction number and try again.');
       }
     }
     throw new Error('Failed to verify transaction after multiple attempts.');
