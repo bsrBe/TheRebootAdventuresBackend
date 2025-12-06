@@ -113,6 +113,13 @@ export class TelegramController {
           return res.status(200).json({ success: true });
       }
 
+      // Handle standalone Transaction ID (10 chars, alphanumeric, starts with letter)
+      // This is a heuristic to improve UX so users don't HAVE to reply
+      if (text && !text.startsWith('/') && /^[A-Z0-9]{10}$/i.test(text.trim())) {
+          await this.handleTransactionSubmission(chatId, text, userId);
+          return res.status(200).json({ success: true });
+      }
+
       // Handle commands
       if (text && text.startsWith('/')) {
         await this.handleCommand(chatId, text, userId);
