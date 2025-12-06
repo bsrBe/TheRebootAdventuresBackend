@@ -17,7 +17,7 @@ export class TelebirrService {
    * Verify a Telebirr transaction by scraping the receipt page
    */
   async verifyTransaction(transactionId: string): Promise<TelebirrReceipt> {
-    const maxRetries = 100;
+    const maxRetries = 3;
     let attempt = 0;
     
     while (attempt < maxRetries) {
