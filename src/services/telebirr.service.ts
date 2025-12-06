@@ -17,7 +17,7 @@ export class TelebirrService {
    * Verify a Telebirr transaction by scraping the receipt page
    */
   async verifyTransaction(transactionId: string): Promise<TelebirrReceipt> {
-    const maxRetries = 1; // Reduced from 3 to 1 to fail fast
+    const maxRetries = 3; // Increased to 3 for better reliability
     let attempt = 0;
     
     while (attempt < maxRetries) {
@@ -33,7 +33,7 @@ export class TelebirrService {
             'Cache-Control': 'no-cache',
             'Pragma': 'no-cache'
           },
-          timeout: 15000 // Reduced to 15 seconds
+          timeout: 30000 // Increased to 30 seconds
         });
 
         const $ = cheerio.load(response.data as string);
@@ -136,7 +136,8 @@ export class TelebirrService {
         if (error.code === 'ECONNABORTED' || error.response?.status >= 500) {
           attempt++;
           if (attempt < maxRetries) {
-            await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2s before retry
+            console.log(`Retrying in 3s... (Attempt ${attempt + 1} failed)`);
+            await new Promise(resolve => setTimeout(resolve, 3000)); // Wait 3s before retry
             continue;
           }
         }
