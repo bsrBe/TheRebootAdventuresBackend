@@ -25,28 +25,15 @@ router.post(
 );
 
 /**
- * @route GET /api/payments/verify/:reference
- * @desc Verify a payment (webhook)
- * @access Public (Chapa will call this)
- */
-router.get(
-  '/verify/:reference',
-  validate([
-    param('reference').trim().notEmpty().withMessage('Reference is required')
-  ]),
-  paymentController.verifyPayment
-);
-
-/**
- * @route GET /api/payments/status/:reference
+ * @route GET /api/payments/status/:invoiceId
  * @desc Get payment status
  * @access Private
  */
 router.get(
-  '/status/:reference',
+  '/status/:invoiceId',
   authenticate,
   validate([
-    param('reference').trim().notEmpty().withMessage('Reference is required')
+    param('invoiceId').trim().notEmpty().withMessage('Invoice ID is required')
   ]),
   paymentController.getPaymentStatus
 );
@@ -88,16 +75,6 @@ router.get(
   '/invoices',
   authenticate,
   paymentController.getAllInvoices
-);
-
-/**
- * @route GET /api/payments/success
- * @desc Payment success page
- * @access Public
- */
-router.get(
-  '/success',
-  paymentController.paymentSuccess
 );
 
 // Route to bulk initialize payments (Admin only)

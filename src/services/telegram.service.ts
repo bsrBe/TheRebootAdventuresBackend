@@ -2,6 +2,8 @@ import axios from 'axios';
 import { IRegistration } from '../interfaces/user.interface';
 import { Registration } from '../models/user.model';
 import { configDotenv } from 'dotenv';
+import FormData from 'form-data';
+
 configDotenv()
 
 export class TelegramService {
@@ -43,18 +45,39 @@ export class TelegramService {
    */
   async sendPhoto(
     chatId: string | number, 
-    photoUrl: string, 
+    photo: string | Buffer, 
     caption: string, 
     options: any = {}
   ): Promise<boolean> {
     try {
-      await axios.post(`${this.botApiUrl}/sendPhoto`, {
-        chat_id: chatId,
-        photo: photoUrl,
-        caption,
-        parse_mode: 'HTML',
-        ...options
-      });
+      if (Buffer.isBuffer(photo)) {
+        const form = new FormData();
+        form.append('chat_id', chatId);
+        form.append('photo', photo, 'qr.png');
+        form.append('caption', caption);
+        form.append('parse_mode', 'HTML');
+        
+        // Add extra options
+        Object.keys(options).forEach(key => {
+            if (typeof options[key] === 'object') {
+                form.append(key, JSON.stringify(options[key]));
+            } else {
+                form.append(key, options[key]);
+            }
+        });
+
+        await axios.post(`${this.botApiUrl}/sendPhoto`, form, {
+          headers: form.getHeaders()
+        });
+      } else {
+        await axios.post(`${this.botApiUrl}/sendPhoto`, {
+          chat_id: chatId,
+          photo: photo,
+          caption,
+          parse_mode: 'HTML',
+          ...options
+        });
+      }
       return true;
     } catch (error: any) {
       console.error('Error sending Telegram photo:', error.message);
@@ -66,36 +89,61 @@ export class TelegramService {
   }
 
   /**
-   * Send an invoice to a user
+   * Send payment instruction (Manual Telebirr)
    */
-  async sendInvoice(chatId: string | number, invoice: any): Promise<boolean> {
+  async sendPaymentInstruction(
+    chatId: string | number, 
+    amount: number, 
+    phone: string,
+    eventName: string
+  ): Promise<boolean> {
     try {
-      const { amount, chapaLink, metadata } = invoice;
-      const eventName = metadata?.eventName || 'Event';
-      
-      // Create a payment button
-      const replyMarkup = {
-        inline_keyboard: [
-          [
-            {
-              text: '💳 Pay Now',
-              url: chapaLink
-            }
-          ]
-        ]
-      };
-
       const message = `
-💰 <b>Invoice for ${eventName}</b>
+💰 <b>Payment Required for ${eventName}</b>
 
-` +
-        `Amount: ${amount} ETB\n` +
-        `Status: Pending\n\n` +
-        `Click the button below to complete your payment.`;
+Please transfer <b>${amount} ETB</b> via Telebirr to:
+📱 <b>${phone}</b>
 
-      return this.sendMessage(chatId, message, { reply_markup: replyMarkup });
+⚠️ <b>IMPORTANT:</b>
+After paying, you will receive a transaction message from Telebirr.
+Please reply to this message with your <b>Transaction ID</b> (e.g., CL69OU8FEN).
+`;
+
+      // Use ForceReply to make it easy for the user to reply
+      return this.sendMessage(chatId, message, {
+        reply_markup: {
+          force_reply: true,
+          input_field_placeholder: 'Enter Transaction ID here...'
+        }
+      });
     } catch (error) {
-      console.error('Error sending invoice:', error);
+      console.error('Error sending payment instruction:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Send verification success with QR Code
+   */
+  async sendVerificationSuccess(
+    chatId: string | number, 
+    invoice: any, 
+    qrBuffer: Buffer
+  ): Promise<boolean> {
+    try {
+      const eventName = invoice.metadata?.eventName || 'Event';
+      const caption = `
+✅ <b>Payment Verified!</b>
+
+You are confirmed for <b>${eventName}</b>.
+Here is your ticket QR code. Please show this at the entrance.
+
+See you there! 🚀
+`;
+      
+      return this.sendPhoto(chatId, qrBuffer, caption);
+    } catch (error) {
+      console.error('Error sending verification success:', error);
       return false;
     }
   }
@@ -135,41 +183,17 @@ export class TelegramService {
       if (!user || !user.telegramData?.chatId) return false;
 
       const eventName = invoice.metadata?.eventName || 'Event';
+      const phone = process.env.TELEBIRR_PHONE_NUMBER || 'Unknown';
 
-      const message = `
-⏰ <b>Payment Reminder</b>\n\n` +
-        `Your invoice for ${eventName} is still pending.\n` +
-        `Amount: ${invoice.amount} ETB\n` +
-        `Due: ${invoice.createdAt ? new Date(invoice.createdAt).toLocaleDateString() : 'N/A'}\n\n` +
-        `Please complete your payment to secure your spot!`;
-
-      return this.sendInvoice(user.telegramData.chatId, invoice);
+      // Re-send instruction
+      return this.sendPaymentInstruction(
+          user.telegramData.chatId, 
+          invoice.amount, 
+          phone, 
+          eventName
+      );
     } catch (error) {
       console.error('Error sending payment reminder:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Send payment confirmation
-   */
-  async sendPaymentConfirmation(invoice: any, userId: string): Promise<boolean> {
-    try {
-      const user = await Registration.findById(userId);
-      if (!user || !user.telegramData?.chatId) return false;
-
-      const eventName = invoice.metadata?.eventName || 'Event';
-
-      const message = `
-✅ <b>Payment Confirmed!</b>\n\n` +
-        `Thank you for your payment for ${eventName}.\n` +
-        `Amount: ${invoice.amount} ETB\n` +
-        `Transaction ID: ${invoice.chapaReference || invoice.tx_ref}\n\n` +
-        `We look forward to seeing you at the event!`;
-
-      return this.sendMessage(user.telegramData.chatId, message);
-    } catch (error) {
-      console.error('Error sending payment confirmation:', error);
       return false;
     }
   }

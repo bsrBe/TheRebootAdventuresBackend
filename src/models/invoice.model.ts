@@ -8,10 +8,14 @@ export interface IInvoice extends Document {
   amount: number;
   currency: string;
   status: 'pending' | 'paid' | 'failed' | 'cancelled';
-  chapaLink: string;
-  chapaReference?: string;
-  tx_ref: string;
+  transactionId?: string; // Telebirr Transaction ID (e.g., CL69OU8FEN)
   paidAt?: Date;
+  receiptData?: {
+    senderName?: string;
+    confirmedAmount?: number;
+    date?: string;
+    receiver?: string;
+  };
   metadata?: Record<string, any>;
   createdAt: Date;
   updatedAt: Date;
@@ -50,20 +54,19 @@ const invoiceSchema = new Schema<IInvoice>(
       enum: ['pending', 'paid', 'failed', 'cancelled'],
       default: 'pending'
     },
-    chapaLink: {
+    transactionId: {
       type: String,
-      required: true
-    },
-    chapaReference: {
-      type: String
-    },
-    tx_ref: {
-      type: String,
-      required: true,
-      unique: true
+      unique: true,
+      sparse: true // Allows null/undefined values to exist without violating uniqueness
     },
     paidAt: {
       type: Date
+    },
+    receiptData: {
+      senderName: String,
+      confirmedAmount: Number,
+      date: String,
+      receiver: String
     },
     metadata: {
       type: Schema.Types.Mixed
@@ -75,7 +78,8 @@ const invoiceSchema = new Schema<IInvoice>(
 );
 
 // Indexes
-invoiceSchema.index({ tx_ref: 1 }, { unique: true });
+invoiceSchema.index({ invoiceId: 1 }, { unique: true });
+invoiceSchema.index({ transactionId: 1 }, { unique: true, sparse: true });
 invoiceSchema.index({ user: 1 });
 invoiceSchema.index({ event: 1 });
 

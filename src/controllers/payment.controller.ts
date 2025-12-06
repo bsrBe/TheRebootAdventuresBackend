@@ -30,20 +30,14 @@ export class PaymentController {
         eventName,
         amount,
         place,
-        time: new Date(time),
-        chapaLink: '' // Will be set by the service
+        time: new Date(time)
       } as const;
       
-      const paymentData = await paymentService.initializePayment(user, invoiceData);
+      const result = await paymentService.initializePayment(user, invoiceData);
       
-      const { paymentLink, invoiceId } = paymentData;
-
       return res.status(200).json({
         success: true,
-        data: {
-          paymentLink,
-          invoiceId
-        }
+        data: result
       });
     } catch (error: any) {
       console.error('Error initializing payment:', error);
@@ -55,49 +49,18 @@ export class PaymentController {
   }
 
   /**
-   * Verify a payment (Chapa webhook)
-   */
-  public async verifyPayment(req: Request, res: Response) {
-    try {
-      const { reference } = req.params;
-      
-      const result = await paymentService.verifyPayment(reference);
-      
-      if (!result.success) {
-        return res.status(400).json({
-          success: false,
-          message: result.message
-        });
-      }
-
-      return res.status(200).json({
-        success: true,
-        data: {
-          invoice: result.invoice
-        }
-      });
-    } catch (error: any) {
-      console.error('Error verifying payment:', error);
-      return res.status(500).json({
-        success: false,
-        message: error.message || 'Failed to verify payment'
-      });
-    }
-  }
-
-  /**
    * Get payment status
    */
   public async getPaymentStatus(req: Request, res: Response) {
     try {
-      const { reference } = req.params;
+      const { invoiceId } = req.params;
       
-      const { status } = await paymentService.getPaymentStatus(reference);
+      const { status } = await paymentService.getPaymentStatus(invoiceId);
       let invoice = null;
       
       if (status !== 'not_found') {
          const { Invoice } = await import('../models/invoice.model');
-         invoice = await Invoice.findOne({ tx_ref: reference });
+         invoice = await Invoice.findOne({ invoiceId });
       }
       
       if (status === 'not_found') {
@@ -222,242 +185,6 @@ export class PaymentController {
         success: false,
         message: error.message || 'Failed to get all invoices'
       });
-    }
-  }
-  /**
-   * Handle payment success redirect
-   */
-  public async paymentSuccess(req: Request, res: Response) {
-    try {
-      // Get the transaction reference from the query parameters (Chapa sends it as tx_ref)
-      const { tx_ref } = req.query;
-      console.log('PaymentSuccess: Received query params:', req.query);
-      console.log('PaymentSuccess: tx_ref:', tx_ref);
-      
-      let paymentDetails = null;
-      let userDetails = null;
-
-      if (tx_ref && typeof tx_ref === 'string') {
-        // Import Invoice model
-        const { Invoice } = await import('../models/invoice.model');
-        
-        // Find the invoice associated with this reference
-        const invoice = await Invoice.findOne({ tx_ref: tx_ref }).populate('user');
-
-        if (invoice) {
-          paymentDetails = invoice;
-          const user = invoice.user as any; // Cast to any to access user properties
-          
-          if (user) {
-            userDetails = {
-              fullName: user.fullName,
-              email: user.email,
-              phoneNumber: user.phoneNumber
-            };
-          }
-          
-          // If status is still pending, we might want to verify it now
-          if (invoice.status === 'pending') {
-             try {
-               const verification = await paymentService.verifyPayment(tx_ref as string);
-               if (verification.success && verification.invoice) {
-                 paymentDetails = verification.invoice;
-               }
-             } catch (err) {
-               console.error('Auto-verification failed on success page:', err);
-             }
-          }
-        }
-      }
-      
-      const html = `
-        <html>
-          <head>
-            <title>Payment Receipt</title>
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <style>
-              body { 
-                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; 
-                text-align: center; 
-                padding: 0;
-                margin: 0;
-                background-color: #f4f7f6;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                min-height: 100vh;
-              }
-              .container {
-                background: white;
-                padding: 40px;
-                border-radius: 15px;
-                box-shadow: 0 10px 25px rgba(0,0,0,0.05);
-                max-width: 500px;
-                width: 90%;
-              }
-              .success-icon { 
-                color: #4CAF50; 
-                font-size: 60px; 
-                margin-bottom: 15px;
-                line-height: 1;
-              }
-              h1 { 
-                color: #333; 
-                margin-bottom: 5px;
-                font-size: 24px;
-              }
-              .subtitle { 
-                color: #666; 
-                margin-bottom: 25px;
-                font-size: 14px;
-              }
-              .receipt-box {
-                background-color: #f8f9fa;
-                border: 1px solid #e9ecef;
-                border-radius: 10px;
-                padding: 20px;
-                margin-bottom: 25px;
-                text-align: left;
-              }
-              .section-title {
-                font-size: 12px;
-                text-transform: uppercase;
-                letter-spacing: 1px;
-                color: #adb5bd;
-                margin-bottom: 10px;
-                font-weight: 700;
-                border-bottom: 1px solid #e9ecef;
-                padding-bottom: 5px;
-              }
-              .details-row {
-                display: flex;
-                justify-content: space-between;
-                margin-bottom: 10px;
-                font-size: 14px;
-              }
-              .details-row:last-child {
-                margin-bottom: 0;
-              }
-              .label {
-                color: #6c757d;
-              }
-              .value {
-                font-weight: 600;
-                color: #212529;
-                text-align: right;
-              }
-              .amount-row {
-                margin-top: 15px;
-                padding-top: 15px;
-                border-top: 2px dashed #dee2e6;
-                font-size: 18px;
-              }
-              .amount-value {
-                color: #4CAF50;
-                font-weight: 700;
-              }
-              .btn { 
-                display: inline-block; 
-                padding: 12px 30px; 
-                background-color: #333; 
-                color: white; 
-                text-decoration: none; 
-                border-radius: 25px; 
-                font-weight: 600;
-                transition: background-color 0.3s;
-                font-size: 14px;
-              }
-              .btn:hover {
-                background-color: #000;
-              }
-              .print-btn {
-                background-color: transparent;
-                color: #6c757d;
-                border: 1px solid #ced4da;
-                margin-left: 10px;
-              }
-              .print-btn:hover {
-                background-color: #f8f9fa;
-                color: #333;
-              }
-              .status-badge {
-                display: inline-block;
-                padding: 4px 12px;
-                border-radius: 20px;
-                font-size: 12px;
-                font-weight: 600;
-                background-color: #d4edda;
-                color: #155724;
-              }
-            </style>
-          </head>
-          <body>
-            <div class="container">
-              <div class="success-icon">✓</div>
-              <h1>Payment Successful</h1>
-              <p class="subtitle">Your transaction has been completed.</p>
-              
-              ${paymentDetails ? `
-              <div class="receipt-box">
-                <div class="section-title">Customer Details</div>
-                <div class="details-row">
-                  <span class="label">Name</span>
-                  <span class="value">${userDetails?.fullName || 'N/A'}</span>
-                </div>
-                <div class="details-row">
-                  <span class="label">Email</span>
-                  <span class="value">${userDetails?.email || 'N/A'}</span>
-                </div>
-                <div class="details-row">
-                  <span class="label">Phone</span>
-                  <span class="value">${userDetails?.phoneNumber || 'N/A'}</span>
-                </div>
-
-                <div class="section-title" style="margin-top: 20px;">Payment Details</div>
-                <div class="details-row">
-                  <span class="label">Event</span>
-                  <span class="value">${paymentDetails.eventName}</span>
-                </div>
-                <div class="details-row">
-                  <span class="label">Invoice ID</span>
-                  <span class="value">${paymentDetails.invoiceId}</span>
-                </div>
-                <div class="details-row">
-                  <span class="label">Reference</span>
-                  <span class="value" style="font-family: monospace;">${paymentDetails.chapaReference}</span>
-                </div>
-                <div class="details-row">
-                  <span class="label">Date</span>
-                  <span class="value">${paymentDetails.createdAt ? new Date(paymentDetails.createdAt).toLocaleDateString() : new Date().toLocaleDateString()}</span>
-                </div>
-                <div class="details-row">
-                  <span class="label">Status</span>
-                  <span class="value"><span class="status-badge">${paymentDetails.status.toUpperCase()}</span></span>
-                </div>
-
-                <div class="details-row amount-row">
-                  <span class="label">Total Amount</span>
-                  <span class="value amount-value">${paymentDetails.amount} ETB</span>
-                </div>
-              </div>
-              ` : `
-              <div class="receipt-box">
-                <p style="text-align: center; color: #666;">Payment details could not be loaded. Please check your email for confirmation.</p>
-                <p style="text-align: center; font-family: monospace; font-size: 12px; color: #999;">Ref: ${tx_ref || 'N/A'}</p>
-              </div>
-              `}
-
-              <a href="/" class="btn">Return to Home</a>
-              <button onclick="window.print()" class="btn print-btn">Print Receipt</button>
-            </div>
-          </body>
-        </html>
-      `;
-      
-      res.send(html);
-    } catch (error) {
-      console.error('Error rendering success page:', error);
-      res.status(500).send('An error occurred while rendering the success page.');
     }
   }
 

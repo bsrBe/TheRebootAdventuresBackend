@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import { TelegramService } from '../services/telegram.service';
 import { Registration } from '../models/user.model';
+import { paymentService } from '../services/payment.service';
 
 export class TelegramController {
   private telegramService: TelegramService;
@@ -106,6 +107,12 @@ export class TelegramController {
         return res.status(400).json({ success: false, message: 'No chat ID provided' });
       }
 
+      // Handle Reply to Message (Transaction ID submission)
+      if (message && message.reply_to_message && message.text) {
+          await this.handleTransactionSubmission(chatId, message.text, userId);
+          return res.status(200).json({ success: true });
+      }
+
       // Handle commands
       if (text && text.startsWith('/')) {
         await this.handleCommand(chatId, text, userId);
@@ -121,6 +128,37 @@ export class TelegramController {
       console.error('Error handling Telegram webhook:', error);
       return res.status(500).json({ success: false, message: 'Internal server error' });
     }
+  };
+
+  /**
+   * Handle Transaction ID Submission
+   */
+  private handleTransactionSubmission = async (chatId: string | number, transactionId: string, userId?: number) => {
+      // Basic validation of transaction ID format (e.g., alphanumeric, length)
+      const cleanId = transactionId.trim().toUpperCase();
+      
+      if (cleanId.length < 8) {
+          return this.telegramService.sendMessage(chatId, '❌ Invalid Transaction ID format. Please check and try again.');
+      }
+
+      await this.telegramService.sendMessage(chatId, '🔄 Verifying transaction... Please wait.');
+
+      // Find user by Telegram ID
+      const user = await Registration.findOne({ 'telegramData.id': userId });
+      if (!user) {
+          return this.telegramService.sendMessage(chatId, '❌ User not found. Please register first.');
+      }
+
+      // Call PaymentService to verify
+      const result = await paymentService.verifyPayment(cleanId, user._id.toString());
+
+      if (!result.success) {
+          return this.telegramService.sendMessage(chatId, `❌ Verification Failed: ${result.message}`);
+      }
+      
+      // Success message is handled inside verifyPayment (sends QR code)
+      // But we can send a small confirmation text here if needed, or rely on the service.
+      // Service sends "Payment Verified" with QR.
   };
 
   /**
@@ -308,23 +346,14 @@ export class TelegramController {
     }
 
     const eventName = invoice.metadata?.eventName || 'Event';
+    const phone = process.env.TELEBIRR_PHONE_NUMBER || 'Unknown';
 
-    // Send the payment link
-    await this.telegramService.sendMessage(
-      chatId,
-      `💳 Please complete your payment for ${eventName} by clicking the button below.`,
-      {
-        reply_markup: {
-          inline_keyboard: [
-            [
-              {
-                text: 'Pay Now',
-                url: invoice.chapaLink
-              }
-            ]
-          ]
-        }
-      }
+    // Send the payment instruction
+    await this.telegramService.sendPaymentInstruction(
+        chatId,
+        invoice.amount,
+        phone,
+        eventName
     );
   };
 
