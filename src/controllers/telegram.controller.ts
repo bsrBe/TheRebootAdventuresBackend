@@ -109,14 +109,20 @@ export class TelegramController {
 
       // Handle Reply to Message (Transaction ID submission)
       if (message && message.reply_to_message && message.text) {
-          await this.handleTransactionSubmission(chatId, message.text, userId);
+          // Process asynchronously to prevent webhook timeout
+          this.handleTransactionSubmission(chatId, message.text, userId).catch(err => 
+            console.error('Error in async transaction submission:', err)
+          );
           return res.status(200).json({ success: true });
       }
 
       // Handle standalone Transaction ID (10 chars, alphanumeric, starts with letter)
       // This is a heuristic to improve UX so users don't HAVE to reply
       if (text && !text.startsWith('/') && /^[A-Z0-9]{10}$/i.test(text.trim())) {
-          await this.handleTransactionSubmission(chatId, text, userId);
+          // Process asynchronously to prevent webhook timeout
+          this.handleTransactionSubmission(chatId, text, userId).catch(err => 
+            console.error('Error in async transaction submission:', err)
+          );
           return res.status(200).json({ success: true });
       }
 
