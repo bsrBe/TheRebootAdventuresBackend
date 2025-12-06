@@ -28,12 +28,18 @@ export class TelegramController {
 
       // Load all users who have interacted with the bot and stayed subscribed
       const users = await Registration.find({
-        'telegramData.chatId': { $ne: null },
+        $or: [
+          { 'telegramData.chatId': { $ne: null } },
+          { 'telegramData.id': { $ne: null } }
+        ],
         'telegramData.is_subscribed': true,
       });
 
       const chatIds = users
-        .map((u) => (u as any).telegramData?.chatId)
+        .map((u) => {
+          const tData = (u as any).telegramData;
+          return tData?.chatId || tData?.id;
+        })
         .filter((id) => id !== null && id !== undefined);
 
       if (chatIds.length === 0) {
@@ -59,7 +65,7 @@ export class TelegramController {
 
       const text = parts.join('\n');
 
-      const frontendUrl = process.env.FRONTEND_URL || 'https://your-frontend-url.com';
+      const frontendUrl = process.env.FRONTEND_URL ;
       const replyMarkup = {
         inline_keyboard: [
           [
