@@ -101,6 +101,66 @@ export class AuthService {
     }
   }
 
+  static async forgotPassword(email: string) {
+    const admin = await Admin.findOne({ email });
+    if (!admin) {
+      throw new Error('Admin with this email does not exist');
+    }
+
+    // Generate reset token
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetExpires = new Date(Date.now() + 3600000); // 1 hour
+
+    admin.resetPasswordToken = resetToken;
+    admin.resetPasswordExpires = resetExpires;
+    await admin.save();
+
+    // Send reset email
+    const resetUrl = `${process.env.ADMIN_URL}/reset-password?token=${resetToken}`;
+    await sendEmail({
+      to: email,
+      subject: 'Password Reset Request',
+      html: `You requested a password reset. Click <a href="${resetUrl}">here</a> to reset your password. If you didn't request this, please ignore this email.`
+    });
+
+    return { success: true, message: 'Password reset email sent' };
+  }
+
+  static async resetPassword(token: string, newPassword: string) {
+    const admin = await Admin.findOne({
+      resetPasswordToken: token,
+      resetPasswordExpires: { $gt: new Date() }
+    });
+
+    if (!admin) {
+      throw new Error('Invalid or expired reset token');
+    }
+
+    admin.passwordHash = newPassword;
+    admin.resetPasswordToken = undefined;
+    admin.resetPasswordExpires = undefined;
+    await admin.save();
+
+    return { success: true, message: 'Password reset successfully' };
+  }
+
+  static async changePassword(adminId: string, oldPassword: string, newPassword: string) {
+    const admin = await Admin.findById(adminId).select('+passwordHash');
+    if (!admin) {
+      throw new Error('Admin not found');
+    }
+
+    const isMatch = await admin.comparePassword(oldPassword);
+    if (!isMatch) {
+      throw new Error('Incorrect current password');
+    }
+
+    admin.passwordHash = newPassword;
+    await admin.save();
+
+    return { success: true, message: 'Password changed successfully' };
+  }
+
   private static generateTokens(admin: IAdmin) {
     const payload = {
       id: admin._id,
