@@ -23,6 +23,8 @@ export interface IAdmin extends Document {
   invitationToken?: string;
   invitationExpires?: Date;
   lastLogin?: Date;
+  resetPasswordToken?: string;
+  resetPasswordExpires?: Date;
   userType: 'admin';
   createdAt: Date;
   updatedAt: Date;
@@ -71,6 +73,14 @@ const adminSchema = new Schema<IAdmin>({
   },
   lastLogin: {
     type: Date
+  },
+  resetPasswordToken: {
+    type: String,
+    select: false
+  },
+  resetPasswordExpires: {
+    type: Date,
+    select: false
   }
 }, {
   timestamps: true

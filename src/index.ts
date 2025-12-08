@@ -7,6 +7,7 @@ import usersRouter from './routes/users.route';
 import eventRouter from './routes/event.routes';
 import telegramRoutes from './routes/telegram.routes';
 import adminAuthRoutes from './routes/admin/auth.routes';
+import dashboardRoutes from './routes/admin/dashboard.routes';
 import { errorHandler, handleProcessErrors } from  '../src/middleware/error.middleware';
 import bodyParser from 'body-parser';
 import paymentRoutes from './routes/payment.routes';
@@ -52,6 +53,7 @@ app.use('/api/users', usersRouter);
 app.use('/api/events', eventRouter);
 app.use('/api/telegram', telegramRoutes);
 app.use('/api/admin/auth', adminAuthRoutes);
+app.use('/api/admin/dashboard', dashboardRoutes);
 app.use('/api/payments', paymentRoutes);
 
 // Health check endpoint

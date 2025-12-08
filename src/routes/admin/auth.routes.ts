@@ -56,10 +56,47 @@ router.post(
   AdminAuthController.refreshToken
 );
 
+router.post(
+  '/forgot-password',
+  [
+    body('email').isEmail().withMessage('Valid email is required'),
+    validate
+  ],
+  AdminAuthController.forgotPassword
+);
+
+router.post(
+  '/reset-password',
+  [
+    body('token').notEmpty().withMessage('Token is required'),
+    body('newPassword')
+      .isLength({ min: 8 })
+      .withMessage('Password must be at least 8 characters long')
+      .matches(/\d/)
+      .withMessage('Password must contain a number'),
+    validate
+  ],
+  AdminAuthController.resetPassword
+);
+
 // Protected routes
 router.use(authenticateAdmin);
 
 router.get('/profile', AdminAuthController.getProfile);
+
+router.post(
+  '/change-password',
+  [
+    body('oldPassword').notEmpty().withMessage('Current password is required'),
+    body('newPassword')
+      .isLength({ min: 8 })
+      .withMessage('Password must be at least 8 characters long')
+      .matches(/\d/)
+      .withMessage('Password must contain a number'),
+    validate
+  ],
+  AdminAuthController.changePassword
+);
 
 router.post(
   '/invite',
