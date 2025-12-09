@@ -64,59 +64,63 @@ export class TelebirrService {
         let amountStr = '0';
         let date = new Date().toISOString();
 
-        // Find the index of the columns
-        let amountIndex = -1;
-        let dateIndex = -1;
-        
-        // Iterate through all table rows to find the header row
-        $('tr').each((i, row) => {
-            const cells = $(row).find('td, th');
-            cells.each((j, cell) => {
-                const text = $(cell).text().trim();
-                if (text.includes('Settled Amount')) amountIndex = j;
-                if (text.includes('Payment date')) dateIndex = j;
-            });
-            
-            // If we found headers, look at the next row for values
-            if (amountIndex !== -1 || dateIndex !== -1) {
-                const nextRow = $(row).next('tr');
-                if (nextRow.length) {
-                    const valueCells = nextRow.find('td');
-                    
-                    if (amountIndex !== -1 && valueCells.eq(amountIndex).length) {
-                        const amountText = valueCells.eq(amountIndex).text().trim();
-                        // Clean amount string (remove ETB, commas, " Birr")
-                        const amountVal = parseFloat(amountText.replace(/[^0-9.]/g, ''));
-                        if (!isNaN(amountVal)) {
-                             amountStr = amountText;
-                        }
-                    }
-                    
-                    if (dateIndex !== -1 && valueCells.eq(dateIndex).length) {
-                         const dateText = valueCells.eq(dateIndex).text().trim();
-                         if (dateText) {
-                             date = dateText;
-                         }
-                    }
-                }
-                // Reset indices to avoid false positives in other tables if any (though unlikely to have same headers)
-                // But we should break if we found both. 
-                return false; // Break loop
-            }
-        });
+        // Look for the table containing "Settled Amount" - be more specific
+        const settledAmountHeader = $('td:contains("Settled Amount"), th:contains("Settled Amount")').last();
+        const amountRow = settledAmountHeader.closest('tr').next('tr');
 
-        // Fallback if table parsing failed (e.g. mobile view might use divs)
+        if (amountRow.length) {
+          // Look for the cell that contains "1.00 Birr" pattern
+          const amountCells = amountRow.find('td');
+          amountCells.each((i, cell) => {
+            const cellText = $(cell).text().trim();
+            if (cellText.match(/^\d+\.\d{2}\s*Birr$/)) {
+              amountStr = cellText;
+              console.log('Found amount in table cell:', amountStr);
+              return false; // Stop after finding the correct amount
+            }
+          });
+        }
+
+        // Extract date from the same table
+        const dateHeader = $('td:contains("Payment date"), th:contains("Payment date")').last();
+        const dateRow = dateHeader.closest('tr').next('tr');
+
+        if (dateRow.length) {
+          const dateCell = dateRow.find('td').eq(1); // Second column
+          if (dateCell.length) {
+            date = dateCell.text().trim();
+            console.log('Found date in table cell:', date);
+          }
+        }
+
+        // Fallback: Look for "1.00 Birr" pattern anywhere in the document
+        if (!amountStr || amountStr === '0') {
+          const amountMatch = $(`*:contains("1.00 Birr")`).text().match(/(\d+\.\d{2})\s*Birr/);
+          if (amountMatch) {
+            amountStr = amountMatch[0];
+            console.log('Found amount via pattern match:', amountStr);
+          }
+        }
+
+        // Final fallback - look for any text containing "Birr" and extract numbers
         if (amountStr === '0') {
-             const amountLabel = $('*:contains("Settled Amount")').last();
-             if (amountLabel.length) {
-                 amountStr = amountLabel.next().text().trim() || amountLabel.parent().next().text().trim();
-             }
+            $('*:contains("Birr")').each((i, elem) => {
+                const text = $(elem).text().trim();
+                const match = text.match(/(\d+\.?\d*)\s*Birr/i);
+                if (match && parseFloat(match[1]) > 0) {
+                    amountStr = match[1] + ' Birr';
+                    console.log('Final fallback amount:', amountStr);
+                    return false; // Stop after first match
+                }
+            });
         }
 
         // Clean amount string (remove ETB, commas)
         const amount = parseFloat(amountStr.replace(/[^0-9.]/g, ''));
 
-        if (!amount) {
+        console.log('Final parsed amount:', amount, 'from string:', amountStr);
+
+        if (!amount || amount <= 0) {
             throw new Error('Could not parse amount from receipt');
         }
 

@@ -98,43 +98,106 @@ export class PaymentService {
         return { success: false, message: 'Invalid transaction receipt' };
       }
 
-      // 2. Find pending invoice for this user matching the amount
-      // We look for the most recent pending invoice with matching amount
+      // 2. Check if user has already paid for this event first
       const { Invoice } = await import('../models/invoice.model');
       
-      const invoice = await Invoice.findOne({ 
+      // Check if there's already a paid invoice for this event based on amount
+      // We'll check paid invoices with the same amount to determine the event
+      const existingPaidInvoice = await Invoice.findOne({
         user: userId,
         amount: receipt.amount,
+        status: 'paid'
+      }).sort({ createdAt: -1 });
+      
+      if (existingPaidInvoice) {
+        // Resend QR code for existing payment
+        try {
+          const { Registration } = await import('../models/user.model');
+          const user = await Registration.findById(userId);
+          
+          console.log('Found user for QR resend:', {
+            userId,
+            telegramUsername: user?.telegramData?.username,
+            telegramId: user?.telegramData?.id,
+            chatId: user?.telegramData?.chatId,
+            hasTelegramData: !!user?.telegramData
+          });
+          
+          if (user && user.telegramData) {
+            const telegramService = new TelegramService();
+            
+            // Use chatId if available, otherwise use telegramId
+            const chatId = user.telegramData.chatId || user.telegramData.id;
+            
+            if (chatId) {
+              console.log('Generating QR code for existing payment...');
+              const qrBuffer = await qrService.generateTicketQR(existingPaidInvoice);
+              
+              console.log('Sending QR code to Telegram chat ID:', chatId);
+              const telegramResult = await telegramService.sendVerificationSuccess(
+                chatId,
+                existingPaidInvoice,
+                qrBuffer
+              );
+              
+              console.log('Telegram send result:', telegramResult);
+              console.log('QR code resent for existing payment to user:', user.telegramData.username);
+            } else {
+              console.log('No chat ID or Telegram ID found for user');
+            }
+          } else {
+            console.log('User or Telegram data not found:', {
+              userExists: !!user,
+              hasTelegramData: !!user?.telegramData
+            });
+          }
+        } catch (qrError: any) {
+          console.error('Failed to resend QR code:', qrError.message);
+          console.error('Full QR error:', qrError);
+          // Continue even if QR resend fails
+        }
+        
+        return { 
+          success: false, 
+          message: `Already paid for event: ${existingPaidInvoice.metadata?.eventName || 'Event'}. Your payment was verified on ${existingPaidInvoice.paidAt?.toLocaleDateString()}. QR code has been resent.`,
+          invoice: existingPaidInvoice
+        };
+      }
+      
+      // Find pending invoice for this user - check if paid amount >= invoice amount
+      const pendingInvoice = await Invoice.findOne({ 
+        user: userId,
+        amount: { $lte: receipt.amount }, // Invoice amount should be less than or equal to paid amount
         status: 'pending'
       }).sort({ createdAt: -1 });
 
-      if (!invoice) {
-        return { success: false, message: `No pending invoice found for amount ${receipt.amount} ETB` };
+      if (!pendingInvoice) {
+        return { success: false, message: `No pending invoice found for amount ${receipt.amount} ETB. Looking for invoice <= ${receipt.amount} ETB` };
       }
 
       // 3. Update Invoice
-      invoice.status = 'paid';
-      invoice.transactionId = transactionId;
-      invoice.paidAt = new Date(receipt.date);
-      invoice.receiptData = {
+      pendingInvoice.status = 'paid';
+      pendingInvoice.transactionId = transactionId;
+      pendingInvoice.paidAt = new Date(receipt.date);
+      pendingInvoice.receiptData = {
         senderName: receipt.senderName,
         confirmedAmount: receipt.amount,
         date: receipt.date,
         receiver: receipt.receiverName
       };
       
-      await invoice.save();
+      await pendingInvoice.save();
 
       // 4. Update EventRegistration status if linked
-      if (invoice.metadata && invoice.metadata.eventName) {
+      if (pendingInvoice.metadata && pendingInvoice.metadata.eventName) {
          const { EventRegistration } = await import('../models/event-registration.model');
          const { Event } = await import('../models/events.model');
          
-         const event = await Event.findOne({ name: invoice.metadata.eventName });
+         const event = await Event.findOne({ name: pendingInvoice.metadata.eventName });
          
          if (event) {
             const registration = await EventRegistration.findOne({
-              user: invoice.user,
+              user: pendingInvoice.user,
               event: event._id
             });
 
@@ -146,36 +209,49 @@ export class PaymentService {
       }
 
       // 5. Send Success Message with QR Code
-      const telegramId = (invoice.user as any).telegramData?.chatId; // Assuming user is populated or we fetch it
-      // Actually invoice.user is ObjectId, we need to fetch user or rely on caller passing userId which might be from telegram context
-      
-      // Let's fetch the user to be sure
       const { Registration } = await import('../models/user.model');
-      const user = await Registration.findById(invoice.user);
+      const user = await Registration.findById(pendingInvoice.user);
 
-      if (user && user.telegramData?.chatId) {
+      if (user && user.telegramData) {
           const telegramService = new TelegramService();
           
-          // Generate QR
-          const qrBuffer = await qrService.generateReceiptQR({
-              eventName: invoice.metadata?.eventName || 'Event',
-              amount: invoice.amount,
-              payerName: receipt.senderName,
-              date: receipt.date,
-              transactionId: transactionId
-          });
-
-          await telegramService.sendVerificationSuccess(
-              user.telegramData.chatId,
-              invoice,
-              qrBuffer
-          );
+          // Use chatId if available, otherwise use telegramId
+          const chatId = user.telegramData.chatId || user.telegramData.id;
+          
+          if (chatId) {
+            // 6. Send Telegram notification with QR code (optional)
+            try {
+              console.log('Generating QR code for new payment...');
+              const qrBuffer = await qrService.generateTicketQR(pendingInvoice);
+              
+              console.log('Sending QR code to Telegram chat ID:', chatId);
+              const telegramResult = await telegramService.sendVerificationSuccess(
+                chatId,
+                pendingInvoice,
+                qrBuffer
+              );
+              
+              console.log('Telegram send result for new payment:', telegramResult);
+              console.log('QR code sent for new payment to user:', user.telegramData.username);
+            } catch (qrError: any) {
+              console.error('QR code generation or Telegram notification failed for new payment:', qrError.message);
+              console.error('Full QR error details:', qrError);
+              // Continue without QR code - payment is still verified
+            }
+          } else {
+            console.log('No chat ID or Telegram ID found for user during new payment');
+          }
+      } else {
+        console.log('User or Telegram data not found for new payment:', {
+          userExists: !!user,
+          hasTelegramData: !!user?.telegramData
+        });
       }
 
       return { 
         success: true, 
         message: 'Payment verified successfully', 
-        invoice 
+        invoice: pendingInvoice
       };
 
     } catch (error: any) {

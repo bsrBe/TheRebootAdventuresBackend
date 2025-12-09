@@ -5,11 +5,12 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
+// const MONGODB_URI = 'mongodb+srv://BisratAbrham:142536bsr@cluster0.hjgnw.mongodb.net/Reboot_Adventures'
 const MONGODB_URI = 'mongodb+srv://BisratAbrham:142536bsr@cluster0.hjgnw.mongodb.net/Reboot_Adventures'
-const ADMIN_EMAIL = 'admin@example.com';
+const ADMIN_EMAIL = 'henos@gmail.com';
 const ADMIN_PASSWORD = 'admin123';
-const ADMIN_FIRST_NAME = 'Admin';
-const ADMIN_LAST_NAME = 'User';
+const ADMIN_FIRST_NAME = 'Henos';
+const ADMIN_LAST_NAME = 'T';
 
 async function createFirstAdmin() {
   try {
@@ -24,14 +25,10 @@ async function createFirstAdmin() {
       process.exit(0);
     }
 
-    // Hash password
-    // const salt = await bcrypt.genSalt(10);
-    // const passwordHash = await bcrypt.hash(ADMIN_PASSWORD, salt);
-
-    // Create admin
+    // Create admin (password will be hashed by the pre-save hook)
     const admin = new Admin({
       email: ADMIN_EMAIL,
-      passwordHash: ADMIN_PASSWORD,
+      passwordHash: ADMIN_PASSWORD, // This will be hashed by the pre-save hook
       firstName: ADMIN_FIRST_NAME,
       lastName: ADMIN_LAST_NAME,
       role: AdminRole.SUPER_ADMIN,

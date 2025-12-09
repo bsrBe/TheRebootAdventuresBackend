@@ -77,6 +77,32 @@ router.get(
   paymentController.getAllInvoices
 );
 
+/**
+ * @route POST /api/payments/debug-scraping
+ * @desc Debug Telebirr transaction scraping (development only)
+ * @access Private
+ */
+router.post(
+  '/debug-scraping',
+  authenticate,
+  paymentController.debugTelebirrScraping
+);
+
+/**
+ * @route POST /api/payments/verify
+ * @desc Verify payment manually via transaction ID
+ * @access Private
+ */
+router.post(
+  '/verify',
+  authenticate,
+  validate([
+    body('transactionId').trim().notEmpty().withMessage('Transaction ID is required'),
+    body('userId').isMongoId().withMessage('Valid user ID is required')
+  ]),
+  paymentController.verifyPayment
+);
+
 // Route to bulk initialize payments (Admin only)
 router.post(
   '/bulk-initialize',

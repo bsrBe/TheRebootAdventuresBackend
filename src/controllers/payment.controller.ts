@@ -189,6 +189,114 @@ export class PaymentController {
   }
 
   /**
+   * Debug Telebirr transaction scraping
+   */
+  public async debugTelebirrScraping(req: Request, res: Response) {
+    try {
+      const { transactionId } = req.body;
+      
+      if (!transactionId) {
+        return res.status(400).json({ message: 'Transaction ID is required' });
+      }
+
+      // Import Telebirr service
+      const { telebirrService } = await import('../services/telebirr.service');
+      
+      // Add debugging to see what's being scraped
+      const axios = require('axios');
+      const cheerio = require('cheerio');
+      
+      const url = `https://transactioninfo.ethiotelecom.et/receipt/${transactionId}`;
+      console.log('Debugging URL:', url);
+      
+      const response = await axios.get(url, {
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        },
+        timeout: 30000
+      });
+      
+      const $ = cheerio.load(response.data);
+      
+      // Get all text content for debugging
+      const allText = $('body').text();
+      const allTables: string[][][] = [];
+      
+      $('table').each((i: number, table: any) => {
+        const tableData: string[][] = [];
+        $(table).find('tr').each((j: number, row: any) => {
+          const rowData: string[] = [];
+          $(row).find('td, th').each((k: number, cell: any) => {
+            rowData.push($(cell).text().trim());
+          });
+          tableData.push(rowData);
+        });
+        allTables.push(tableData);
+      });
+      
+      // Try to get the receipt data
+      try {
+        const receipt = await telebirrService.verifyTransaction(transactionId);
+        return res.status(200).json({
+          success: true,
+          data: {
+            url,
+            allText: allText.substring(0, 1000) + '...', // First 1000 chars
+            tables: allTables,
+            receipt
+          }
+        });
+      } catch (error: any) {
+        return res.status(200).json({
+          success: false,
+          data: {
+            url,
+            allText: allText.substring(0, 1000) + '...',
+            tables: allTables,
+            error: error.message
+          }
+        });
+      }
+      
+    } catch (error: any) {
+      console.error('Debug scraping error:', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to debug scraping'
+      });
+    }
+  }
+
+  /**
+   * Verify payment manually via transaction ID
+   */
+  public async verifyPayment(req: Request, res: Response) {
+    try {
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+      }
+
+      const { transactionId, userId } = req.body;
+
+      // Verify payment
+      const result = await paymentService.verifyPayment(transactionId, userId);
+      
+      return res.status(200).json({
+        success: result.success,
+        message: result.message,
+        data: result.invoice ? { invoice: result.invoice } : undefined
+      });
+    } catch (error: any) {
+      console.error('Error verifying payment:', error);
+      return res.status(500).json({
+        success: false,
+        message: error.message || 'Failed to verify payment'
+      });
+    }
+  }
+
+  /**
    * Bulk initialize payments for an event
    */
   public async bulkInitializePayment(req: Request, res: Response) {

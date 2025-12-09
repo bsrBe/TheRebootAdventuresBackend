@@ -1,27 +1,33 @@
 import QRCode from 'qrcode';
+import crypto from 'crypto';
+
+export interface TicketReference {
+  reference: string;
+  invoiceId: string;
+  transactionId: string;
+  userId: string;
+  eventName: string;
+  amount: number;
+  status: 'valid' | 'used';
+  createdAt: Date;
+  signature: string;
+}
 
 export class QRService {
-  /**
-   * Generate a QR code buffer for a receipt
-   */
-  async generateReceiptQR(data: {
-    eventName: string;
-    amount: number;
-    payerName: string;
-    date: string;
-    transactionId: string;
-  }): Promise<Buffer> {
-    try {
-      // Create a formatted string for the QR content
-      const qrContent = JSON.stringify({
-        event: data.eventName,
-        amount: data.amount,
-        payer: data.payerName,
-        date: data.date,
-        ref: data.transactionId,
-        verified: true
-      });
+  private readonly QR_BASE_URL = (process.env.QR_BASE_URL || 'http://localhost:5000').replace(/\/$/, '').replace(/\/ticket(\/|$)/, ''); // Base URL without /ticket
+  private readonly SECRET_KEY = process.env.QR_SECRET_KEY || 'your-secret-key';
 
+  /**
+   * Generate a secure QR code with reference instead of full data
+   */
+  async generateTicketQR(invoice: any): Promise<Buffer> {
+    try {
+      // Generate secure reference
+      const reference = this.generateSecureReference(invoice);
+      
+      // Create QR content with just the reference URL
+      const qrContent = `${this.QR_BASE_URL}/ticket/${reference}`;
+      
       // Generate QR code as a Buffer
       const buffer = await QRCode.toBuffer(qrContent, {
         errorCorrectionLevel: 'H',
@@ -38,6 +44,102 @@ export class QRService {
       console.error('Error generating QR code:', error);
       throw new Error('Failed to generate QR code');
     }
+  }
+
+  /**
+   * Generate a secure reference for the ticket
+   */
+  private generateSecureReference(invoice: any): string {
+    const timestamp = Date.now();
+    const random = crypto.randomBytes(16).toString('hex');
+    const data = `${invoice.invoiceId}:${invoice.transactionId}:${timestamp}:${random}`;
+    
+    // Create signature
+    const signature = crypto
+      .createHmac('sha256', this.SECRET_KEY)
+      .update(data)
+      .digest('hex');
+    
+    // Combine data with signature
+    const fullData = `${data}:${signature}`;
+    
+    // Encode to base64 for URL safety
+    return Buffer.from(fullData).toString('base64url');
+  }
+
+  /**
+   * Verify and decode QR reference
+   */
+  async verifyTicketReference(reference: string): Promise<TicketReference> {
+    try {
+      // Decode from base64
+      const decoded = Buffer.from(reference, 'base64url').toString('utf-8');
+      const parts = decoded.split(':');
+      
+      if (parts.length !== 5) {
+        throw new Error('Invalid reference format');
+      }
+
+      const [invoiceId, transactionId, timestamp, random, signature] = parts;
+      
+      // Verify signature
+      const dataToVerify = `${invoiceId}:${transactionId}:${timestamp}:${random}`;
+      const expectedSignature = crypto
+        .createHmac('sha256', this.SECRET_KEY)
+        .update(dataToVerify)
+        .digest('hex');
+      
+      if (signature !== expectedSignature) {
+        throw new Error('Invalid signature - possible fraud');
+      }
+
+      // Get invoice details
+      const { Invoice } = await import('../models/invoice.model');
+      const invoice = await Invoice.findOne({ 
+        invoiceId, 
+        transactionId,
+        status: 'paid' 
+      });
+
+      if (!invoice) {
+        throw new Error('Invoice not found or not paid');
+      }
+
+      const createdAt = new Date(parseInt(timestamp));
+
+      return {
+        reference,
+        invoiceId,
+        transactionId,
+        userId: invoice.user.toString(),
+        eventName: invoice.metadata?.eventName || 'Event',
+        amount: invoice.amount,
+        status: this.determineTicketStatus(invoice),
+        createdAt,
+        signature
+      };
+
+    } catch (error) {
+      console.error('Error verifying QR reference:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Determine ticket status based on invoice and usage
+   */
+  private determineTicketStatus(invoice: any): 'valid' | 'used' {
+    const now = new Date();
+    const eventTime = new Date(invoice.metadata?.time);
+    
+    // Check if event has passed
+    if (now > eventTime) {
+      return 'used'; // Changed from 'expired' to 'used'
+    }
+    
+    // Check if ticket has been used (you'd track this separately)
+    // For now, assume valid if paid and event not passed
+    return 'valid';
   }
 }
 

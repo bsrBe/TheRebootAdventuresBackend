@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Error - Ticket Not Found</title>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; padding: 50px; }
+    .error-container { max-width: 600px; margin: 0 auto; }
+    h1 { color: #d32f2f; }
+    .error-code { color: #666; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+  <div class="error-container">
+    <h1><%= message %></h1>
+    <p>We couldn't find the ticket you're looking for. It may have been used, expired, or the URL might be incorrect.</p>
+    <p class="error-code">Error: <%= code %></p>
+    <p><a href="/">Return to Home</a></p>
+  </div>
+</body>
+</html>

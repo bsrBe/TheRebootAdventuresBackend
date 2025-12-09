@@ -11,11 +11,17 @@ import dashboardRoutes from './routes/admin/dashboard.routes';
 import { errorHandler, handleProcessErrors } from  '../src/middleware/error.middleware';
 import bodyParser from 'body-parser';
 import paymentRoutes from './routes/payment.routes';
+import ticketRoutes from './routes/ticket.routes';
 dotenv.config();
-
+import path from 'path';
 // Initialize express app
 const app: Application = express();
 const server = http.createServer(app);
+
+// Configure view engine
+app.set('view engine', 'ejs');
+// Update the views directory path
+app.set('views', path.join(__dirname, 'views'));
 
 // Middleware
 app.use(cors({
@@ -25,7 +31,9 @@ app.use(cors({
 }));
 app.use(express.json());
 app.use(bodyParser.json());
-app.use(express.static('public')); // Serve static files from public directory
+
+// Serve static files from public directory
+app.use(express.static(path.join(__dirname, '../public')));
 // Connect to MongoDB
 const MONGODB_URI = process.env.MONGODB_URI;
 
@@ -55,6 +63,7 @@ app.use('/api/telegram', telegramRoutes);
 app.use('/api/admin/auth', adminAuthRoutes);
 app.use('/api/admin/dashboard', dashboardRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/ticket', ticketRoutes);
 
 // Health check endpoint
 app.get('/api/health', (req: Request, res: Response) => {
