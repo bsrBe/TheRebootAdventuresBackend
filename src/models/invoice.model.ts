@@ -78,8 +78,6 @@ const invoiceSchema = new Schema<IInvoice>(
 );
 
 // Indexes
-invoiceSchema.index({ invoiceId: 1 }, { unique: true });
-invoiceSchema.index({ transactionId: 1 }, { unique: true, sparse: true });
 invoiceSchema.index({ user: 1 });
 invoiceSchema.index({ event: 1 });
 

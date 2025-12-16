@@ -76,6 +76,19 @@ export class AdminAuthController {
     }
   }
 
+  static async updateProfile(req: Request, res: Response) {
+    try {
+      const { firstName, lastName, email } = req.body;
+      if (!req.user) {
+        return res.status(401).json({ success: false, message: 'Not authenticated' });
+      }
+      const result = await AuthService.updateProfile(req.user._id, { firstName, lastName, email });
+      res.json(result);
+    } catch (error: any) {
+      res.status(400).json({ success: false, message: error.message });
+    }
+  }
+
   static async forgotPassword(req: Request, res: Response) {
     try {
       const { email } = req.body;

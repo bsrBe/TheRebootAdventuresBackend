@@ -175,9 +175,7 @@ export class PaymentController {
 
       return res.status(200).json({
         success: true,
-        data: {
-          invoices
-        }
+        data: invoices
       });
     } catch (error: any) {
       console.error('Error getting all invoices:', error);

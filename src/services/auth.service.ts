@@ -161,6 +161,40 @@ export class AuthService {
     return { success: true, message: 'Password changed successfully' };
   }
 
+  static async updateProfile(adminId: string, data: { firstName?: string; lastName?: string; email?: string }) {
+    const admin = await Admin.findById(adminId);
+    if (!admin) {
+      throw new Error('Admin not found');
+    }
+
+    if (data.firstName) admin.firstName = data.firstName;
+    if (data.lastName) admin.lastName = data.lastName;
+    if (data.email) {
+      // Check if email is taken
+      if (data.email !== admin.email) {
+        const existingAdmin = await Admin.findOne({ email: data.email });
+        if (existingAdmin) {
+          throw new Error('Email already in use');
+        }
+        admin.email = data.email;
+      }
+    }
+
+    await admin.save();
+
+    return {
+      success: true,
+      message: 'Profile updated successfully',
+      admin: {
+        id: admin._id,
+        email: admin.email,
+        firstName: admin.firstName,
+        lastName: admin.lastName,
+        role: admin.role
+      }
+    };
+  }
+
   private static generateTokens(admin: IAdmin) {
     const payload = {
       id: admin._id,

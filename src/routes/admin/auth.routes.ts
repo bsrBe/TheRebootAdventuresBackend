@@ -85,6 +85,17 @@ router.use(authenticateAdmin);
 router.get('/profile', AdminAuthController.getProfile);
 
 router.post(
+  '/profile/update',
+  [
+    body('firstName').optional().notEmpty().withMessage('First name cannot be empty'),
+    body('lastName').optional().notEmpty().withMessage('Last name cannot be empty'),
+    body('email').optional().isEmail().withMessage('Valid email is required'),
+    validate
+  ],
+  AdminAuthController.updateProfile
+);
+
+router.post(
   '/change-password',
   [
     body('oldPassword').notEmpty().withMessage('Current password is required'),

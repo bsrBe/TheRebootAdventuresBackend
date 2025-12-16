@@ -42,66 +42,42 @@ export const authenticate = async (
   next: NextFunction
 ) => {
   try {
-    // Get token from header
-    // const authHeader = req.headers.authorization;
-    // console.log("authHeader", authHeader);
-    // if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    //   return res.status(401).json({ message: 'No token, authorization denied' });
-    // }
-
-    // const token = authHeader.split(' ')[1];
-    // if (!token) {
-    //   return res.status(401).json({ message: 'No token, authorization denied' });
-    // }
-
-    // // Verify token
-    // const decoded = jwt.verify(token, JWT_SECRET) as { id: string; type: 'user' | 'admin' };
-    // console.log("decoded", decoded);
-    // if (decoded.type === 'admin') {
-    //   const { Admin } = await import('../models/admin.model');
-    //   const admin = await Admin.findById(decoded.id).lean();
-    //   if (admin) {
-    //     // Cast to any to bypass type checking for now
-    //     req.user = {
-    //       ...admin,
-    //       userType: 'admin'
-    //     } as any;
-    //   }
-    //   console.log("admin",req.user);
-    // } else {
-    //   const { Registration } = await import('../models/user.model');
-    //   const user = await Registration.findById(decoded.id).lean();
-    //   if (user) {
-    //     // Cast to any to bypass type checking for now
-    //     req.user = {
-    //       ...user,
-    //       userType: 'user'
-    //     } as any;
-    //     console.log("user",req.user);
-    //   }
-    // }
-    // console.log("req.user",req.user);
-    // if (!req.user) {
-    //   return res.status(401).json({ message: 'Token is not valid' });
-    // }
-
-    // // Attach user to the request object
-    // next();
     const authHeader = req.header('Authorization');
     if (!authHeader?.startsWith('Bearer ')) {
       return res.status(401).json({ message: 'No token, authorization denied' });
     }
 
     const token = authHeader.split(' ')[1];
-    console.log('authHeader', authHeader);
     
     // Verify token
-    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as any;
-    console.log('decoded', decoded);
+    const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as { id: string; type?: string };
     
-    // Add user from payload
-    req.user = decoded;
-    console.log('req.user', req.user); // Should show the decoded user
+    // Check if it's an admin token (usually has type or we check Admin collection)
+    // First try to find in Admin collection
+    const { Admin } = await import('../models/admin.model');
+    const admin = await Admin.findById(decoded.id).lean();
+    
+    if (admin) {
+      req.user = {
+        ...admin,
+        userType: 'admin'
+      } as any;
+    } else {
+      // If not admin, check regular user
+      const { Registration } = await import('../models/user.model');
+      const user = await Registration.findById(decoded.id).lean();
+      
+      if (user) {
+        req.user = {
+          ...user,
+          userType: 'user'
+        } as any;
+      }
+    }
+
+    if (!req.user) {
+      return res.status(401).json({ message: 'User not found' });
+    }
     
     next();
   } catch (error) {
