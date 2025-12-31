@@ -25,6 +25,7 @@ export class PaymentService {
       amount: number;
       place: string;
       time: Date;
+      eventId?: string;
     }
   ): Promise<{ invoiceId: string; message: string }> {
     try {
@@ -37,6 +38,7 @@ export class PaymentService {
       const invoice = new Invoice({
         invoiceId: invoiceId,
         user: user._id,
+        event: invoiceData.eventId,
         amount: invoiceData.amount,
         status: 'pending',
         metadata: {
@@ -192,7 +194,9 @@ export class PaymentService {
         senderName: receipt.senderName,
         confirmedAmount: receipt.amount,
         date: receipt.date,
-        receiver: receipt.receiverName
+        receiver: (receipt.receiverName && receipt.receiverName !== 'Unknown') 
+          ? receipt.receiverName 
+          : 'Reboot Adventures'
       };
       
       await pendingInvoice.save();
@@ -290,7 +294,7 @@ export class PaymentService {
 
       // Import Event model to get event details
       const { Event } = await import('../models/events.model');
-      const event = await Event.findById(eventId);
+      const event = await Event.findById(eventId) as any;
 
       if (!event) {
         throw new Error('Event not found');
@@ -324,7 +328,8 @@ export class PaymentService {
             eventName: event.name,
             amount: event.price,
             place: event.location,
-            time: event.date
+            time: event.date,
+            eventId: event._id.toString()
           });
 
           // Update status in EventRegistration

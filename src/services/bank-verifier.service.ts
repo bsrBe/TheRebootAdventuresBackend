@@ -40,6 +40,7 @@ export class BankVerifierService {
       return {
         transactionId: slip['Transaction Reference'] || transactionId,
         senderName: slip['Source Account Name'] || 'Unknown',
+        receiverName: slip['Destination Account Name'] || 'Reboot Adventures',
         amount: amount,
         date: slip['Transaction Date'] || new Date().toISOString(),
         status: 'valid'
@@ -85,6 +86,7 @@ export class BankVerifierService {
 
           // 3. Parse text using regex
           const payerMatch = text.match(/Payer\s+(.+)/);
+          const beneficiaryMatch = text.match(/Transfer to\s+(.+)/) || text.match(/Beneficiary\s+(.+)/);
           const amountMatch = text.match(/Transferred Amount\s+([\d,.]+)\s+ETB/);
           const dateMatch = text.match(/Payment Date & Time\s+(.+)/);
 
@@ -97,6 +99,7 @@ export class BankVerifierService {
           return {
             transactionId,
             senderName: payerMatch ? payerMatch[1].trim() : 'Unknown',
+            receiverName: beneficiaryMatch ? beneficiaryMatch[1].trim() : 'Reboot Adventures',
             amount: amount,
             date: dateMatch ? dateMatch[1].trim() : new Date().toISOString(),
             status: 'valid'

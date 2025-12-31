@@ -46,8 +46,8 @@ export class TelebirrService {
         // Extract data using specific selectors based on the receipt structure
         
         // 1. Extract Payer/Sender and Receiver
-        // Look for "Credited Party name" for receiver
-        const receiverLabel = $('td:contains("Credited Party name"), div:contains("Credited Party name")').last();
+        // Look for "Credited Party name" or "Beneficiary Name" for receiver
+        const receiverLabel = $('td:contains("Credited Party name"), div:contains("Credited Party name"), td:contains("Beneficiary Name")').last();
         const receiverName = receiverLabel.next().text().trim() || 
                              receiverLabel.parent().next().text().trim() || 
                              'Unknown';
