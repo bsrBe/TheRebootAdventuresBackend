@@ -121,4 +121,13 @@ export class AdminAuthController {
       res.status(400).json({ success: false, message: error.message });
     }
   }
+
+  static async getAllAdmins(req: Request, res: Response) {
+    try {
+      const result = await AuthService.getAllAdmins();
+      res.json({ success: true, data: result });
+    } catch (error: any) {
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
 }

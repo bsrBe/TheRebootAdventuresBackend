@@ -195,6 +195,10 @@ export class AuthService {
     };
   }
 
+  static async getAllAdmins() {
+    return Admin.find().select('-passwordHash');
+  }
+
   private static generateTokens(admin: IAdmin) {
     const payload = {
       id: admin._id,

@@ -83,6 +83,7 @@ router.post(
 router.use(authenticateAdmin);
 
 router.get('/profile', AdminAuthController.getProfile);
+router.get('/list', requireRole(AdminRole.SUPER_ADMIN), AdminAuthController.getAllAdmins);
 
 router.post(
   '/profile/update',
