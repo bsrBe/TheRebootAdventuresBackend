@@ -173,7 +173,8 @@ Please transfer <b>${amount} ETB</b> to:
 <b>${phoneOrAccount}</b>
 
 ⚠️ <b>IMPORTANT:</b>
-After paying, please reply to this message with your <b>Transaction ID</b>.
+- Transfer <b>MUST</b> be initiated from <b>${bankName}</b> only (${method.toUpperCase()} ➡️ ${method.toUpperCase()}).
+- After paying, please reply to this message with your <b>Transaction ID</b>.
 <i>Verification method: ${bankName}</i>
 `;
 

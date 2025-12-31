@@ -194,7 +194,15 @@ export class TelegramController {
       const result = await paymentService.verifyPayment(cleanId, user._id.toString(), method);
 
       if (!result.success) {
-          return this.telegramService.sendMessage(chatId, `❌ Verification Failed: ${result.message}`);
+          const adminUsername = process.env['Admin_User-Name'] || '@BsreAbrham';
+          const errorMessage = `
+❌ <b>Verification Failed</b>
+
+We couldn't automatically verify your payment at this moment. 
+
+Please send a screenshot of your payment receipt to our admin: <b>${adminUsername}</b> for manual verification.
+`;
+          return this.telegramService.sendMessage(chatId, errorMessage);
       }
       
       // Success message is handled inside verifyPayment (sends QR code)

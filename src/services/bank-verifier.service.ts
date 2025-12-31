@@ -68,7 +68,7 @@ export class BankVerifierService {
           
           // Use curl for download as it's more resilient to the specific TLS/H2 issues of CBE server
           // -k is for insecure if needed, but here it's more about resilience
-          await execPromise(`curl -L "https://apps.cbe.com.et:100/?id=${transactionId}" -o ${tempPdf} --max-time 60 --retry 2`);
+          await execPromise(`curl -L "https://apps.cbe.com.et:100/?id=${transactionId}" -o "${tempPdf}" --max-time 60 --retry 2`);
           
           if (!fs.existsSync(tempPdf) || fs.statSync(tempPdf).size < 5000) {
               throw new Error('CBE PDF download failed or file is not a valid PDF');
