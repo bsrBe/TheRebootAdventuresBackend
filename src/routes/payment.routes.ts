@@ -111,4 +111,10 @@ router.post(
   paymentController.bulkInitializePayment
 );
 
+router.get(
+  '/export',
+  authenticate,
+  paymentController.exportInvoices
+);
+
 export default router;

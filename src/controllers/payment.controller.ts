@@ -295,6 +295,142 @@ export class PaymentController {
   }
 
   /**
+   * Export invoices as CSV or PDF
+   */
+  public async exportInvoices(req: Request, res: Response) {
+    try {
+      const formatParam = (req.query.format as string | undefined)?.toLowerCase() || 'csv';
+      const status = req.query.status as string | undefined;
+
+      // Import Invoice model
+      const { Invoice } = await import('../models/invoice.model');
+
+      const query: any = {};
+      if (status && status !== 'all') {
+        query.status = status;
+      }
+
+      const invoices = await Invoice.find(query)
+        .populate('user', 'fullName email phoneNumber')
+        .sort({ createdAt: -1 })
+        .lean();
+
+      if (formatParam === 'csv') {
+        const header = 'Invoice ID,User,Amount,Status,Event,Date';
+        const csvLines = invoices.map((inv: any) => {
+          const userName = typeof inv.user === 'object' ? inv.user.fullName : 'Unknown';
+          const eventName = inv.metadata?.eventName || '-';
+          const date = inv.createdAt ? new Date(inv.createdAt).toISOString() : '-';
+          
+          return [inv.invoiceId, userName, inv.amount, inv.status, eventName, date]
+            .map((val) => {
+              const s = val ?? '';
+              if (/[",\n]/.test(String(s))) {
+                return '"' + String(s).replace(/"/g, '""') + '"';
+              }
+              return String(s);
+            })
+            .join(',');
+        });
+
+        const csv = [header, ...csvLines].join('\n');
+        res.setHeader('Content-Type', 'text/csv');
+        res.setHeader('Content-Disposition', `attachment; filename="invoices_export_${new Date().toISOString().split('T')[0]}.csv"`);
+        return res.status(200).send(csv);
+      }
+
+      if (formatParam === 'pdf') {
+        const PDFDocument = (await import('pdfkit')).default as any;
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="invoices_export_${new Date().toISOString().split('T')[0]}.pdf"`);
+
+        const doc = new PDFDocument({ margin: 40, layout: 'landscape' });
+        doc.pipe(res);
+
+        // font registration
+        let fontName = 'Helvetica';
+        let fontBold = 'Helvetica-Bold';
+        try {
+          const amharicFontPath = '/usr/share/fonts/google-droid-sans-fonts/DroidSansEthiopic-Regular.ttf';
+          const amharicFontBoldPath = '/usr/share/fonts/google-droid-sans-fonts/DroidSansEthiopic-Bold.ttf';
+          doc.registerFont('Amharic', amharicFontPath);
+          doc.registerFont('Amharic-Bold', amharicFontBoldPath);
+          fontName = 'Amharic';
+          fontBold = 'Amharic-Bold';
+        } catch (err) { /* ignore */ }
+
+        doc.font(fontBold).fontSize(18).text('Finance Report - Invoices', { align: 'center' });
+        doc.moveDown();
+
+        const tableTop = doc.y + 10;
+        const rowHeight = 25;
+        const columnWidths = [120, 150, 150, 80, 80, 140]; // InvoiceID, User, Event, Amount, Status, Date
+        const startX = doc.page.margins.left;
+
+        const drawRowBackground = (y: number, isHeader = false) => {
+          doc.rect(startX, y, columnWidths.reduce((a, b) => a + b, 0), rowHeight)
+            .fillOpacity(isHeader ? 0.1 : 0.03)
+            .fill('#000000')
+            .fillOpacity(1);
+        };
+
+        const drawCellText = (text: string, x: number, y: number, width: number, isHeader = false) => {
+          doc
+            .fontSize(10)
+            .font(isHeader ? fontBold : fontName)
+            .fillColor('#000000')
+            .text(text, x + 5, y + 8, { width: width - 10, ellipsis: true });
+        };
+
+        // Header
+        let y = tableTop;
+        drawRowBackground(y, true);
+        const headers = ['Invoice ID', 'User', 'Event', 'Amount', 'Status', 'Date'];
+        let x = startX;
+        headers.forEach((h, i) => {
+          drawCellText(h, x, y, columnWidths[i], true);
+          x += columnWidths[i];
+        });
+        y += rowHeight;
+
+        // Rows
+        invoices.forEach((inv: any, i: number) => {
+          if (y + rowHeight > doc.page.height - doc.page.margins.bottom) {
+            doc.addPage();
+            y = doc.page.margins.top;
+          }
+          if (i % 2 === 0) drawRowBackground(y);
+          
+          x = startX;
+          const userName = typeof inv.user === 'object' ? inv.user.fullName : 'Unknown';
+          const values = [
+            inv.invoiceId,
+            userName,
+            inv.metadata?.eventName || '-',
+            `${inv.amount} ETB`,
+            inv.status.toUpperCase(),
+            inv.createdAt ? new Date(inv.createdAt).toLocaleString() : '-'
+          ];
+
+          values.forEach((v, idx) => {
+            drawCellText(String(v), x, y, columnWidths[idx]);
+            x += columnWidths[idx];
+          });
+          y += rowHeight;
+        });
+
+        doc.end();
+        return;
+      }
+
+      return res.status(400).json({ success: false, message: 'Invalid format. Use csv or pdf.' });
+    } catch (error: any) {
+      console.error('Export invoices error:', error);
+      return res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  /**
    * Bulk initialize payments for an event
    */
   public async bulkInitializePayment(req: Request, res: Response) {

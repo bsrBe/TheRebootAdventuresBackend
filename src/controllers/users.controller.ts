@@ -107,8 +107,22 @@ export const exportUsers = async (req: Request, res: Response): Promise<void> =>
       const doc = new PDFDocument({ margin: 40 });
       doc.pipe(res);
 
+      // Try to register Amharic font if it exists on system
+      let fontName = 'Helvetica';
+      let fontBold = 'Helvetica-Bold';
+      try {
+        const amharicFontPath = '/usr/share/fonts/google-droid-sans-fonts/DroidSansEthiopic-Regular.ttf';
+        const amharicFontBoldPath = '/usr/share/fonts/google-droid-sans-fonts/DroidSansEthiopic-Bold.ttf';
+        doc.registerFont('Amharic', amharicFontPath);
+        doc.registerFont('Amharic-Bold', amharicFontBoldPath);
+        fontName = 'Amharic';
+        fontBold = 'Amharic-Bold';
+      } catch (err) {
+        console.warn('Amharic font not found, falling back to Helvetica');
+      }
+
       // Title
-      doc.fontSize(18).text('Users Export', { align: 'center' });
+      doc.font(fontBold).fontSize(18).text('Users Export', { align: 'center' });
       doc.moveDown();
 
       // Simple table layout
@@ -132,7 +146,7 @@ export const exportUsers = async (req: Request, res: Response): Promise<void> =>
       const drawCellText = (text: string, x: number, y: number, width: number, isHeader = false) => {
         doc
           .fontSize(10)
-          .font(isHeader ? 'Helvetica-Bold' : 'Helvetica')
+          .font(isHeader ? fontBold : fontName)
           .fillColor('#000000')
           .text(text, x + 4, y + 5, {
             width: width - 8,
