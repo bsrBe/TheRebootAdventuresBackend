@@ -57,18 +57,16 @@ export class PaymentService {
       if (telegramId) {
         try {
           const telegramService = new TelegramService();
-          const phone = process.env.TELEBIRR_PHONE_NUMBER || 'Unknown';
-          
-          await telegramService.sendPaymentInstruction(
+          await telegramService.sendPaymentMethodSelection(
             telegramId, 
             invoiceData.amount, 
-            phone,
-            invoiceData.eventName
+            invoiceData.eventName,
+            invoiceId
           );
-          message = 'Invoice created and Telegram instruction sent';
+          message = 'Invoice created and payment method selection sent';
         } catch (telegramError) {
           console.error('Failed to send Telegram message:', telegramError);
-          message = 'Invoice created but failed to send Telegram instruction';
+          message = 'Invoice created but failed to send payment methods';
         }
       } else {
         message = 'Invoice created but user has no Telegram linked';
@@ -85,14 +83,25 @@ export class PaymentService {
   }
 
   /**
-   * Verify payment manually via Telebirr Receipt
+   * Verify payment manually via various payment methods (Telebirr, CBE, BOA)
    */
-  async verifyPayment(transactionId: string, userId: string): Promise<{ success: boolean; message: string; invoice?: any }> {
+  async verifyPayment(transactionId: string, userId: string, method: string = 'telebirr'): Promise<{ success: boolean; message: string; invoice?: any }> {
     try {
-      console.log(`Verifying transaction: ${transactionId} for user ${userId}`);
+      console.log(`Verifying ${method} transaction: ${transactionId} for user ${userId}`);
       
-      // 1. Verify with Telebirr Scraper
-      const receipt = await telebirrService.verifyTransaction(transactionId);
+      let receipt;
+      
+      // 1. Verify with appropriate service
+      if (method?.toLowerCase() === 'cbe') {
+          const { bankVerifierService } = await import('./bank-verifier.service');
+          receipt = await bankVerifierService.verifyCBE(transactionId);
+      } else if (method?.toLowerCase() === 'boa') {
+          const { bankVerifierService } = await import('./bank-verifier.service');
+          receipt = await bankVerifierService.verifyBOA(transactionId);
+      } else {
+          // Default to Telebirr
+          receipt = await telebirrService.verifyTransaction(transactionId);
+      }
       
       if (receipt.status !== 'valid') {
         return { success: false, message: 'Invalid transaction receipt' };

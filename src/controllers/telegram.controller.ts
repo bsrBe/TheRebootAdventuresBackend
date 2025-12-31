@@ -109,8 +109,15 @@ export class TelegramController {
 
       // Handle Reply to Message (Transaction ID submission)
       if (message && message.reply_to_message && message.text) {
+          let method = 'telebirr';
+          const replyText = message.reply_to_message.text || '';
+          
+          if (replyText.includes('Verification method: CBE')) method = 'cbe';
+          else if (replyText.includes('Verification method: BOA')) method = 'boa';
+          else if (replyText.includes('Verification method: Telebirr')) method = 'telebirr';
+
           // Process asynchronously to prevent webhook timeout
-          this.handleTransactionSubmission(chatId, message.text, userId).catch(err => 
+          this.handleTransactionSubmission(chatId, message.text, userId, method).catch(err => 
             console.error('Error in async transaction submission:', err)
           );
           return res.status(200).json({ success: true });
@@ -119,8 +126,10 @@ export class TelegramController {
       // Handle standalone Transaction ID (10 chars, alphanumeric, starts with letter)
       // This is a heuristic to improve UX so users don't HAVE to reply
       if (text && !text.startsWith('/') && /^[A-Z0-9]{10}$/i.test(text.trim())) {
-          // Process asynchronously to prevent webhook timeout
-          this.handleTransactionSubmission(chatId, text, userId).catch(err => 
+          // For standalone, we might not know the method, fallback to telebirr or try to guess
+          // For now, let's keep it telebirr for standalone to avoid complexity, 
+          // or assume most recent method selection if we had state.
+          this.handleTransactionSubmission(chatId, text, userId, 'telebirr').catch(err => 
             console.error('Error in async transaction submission:', err)
           );
           return res.status(200).json({ success: true });
@@ -146,7 +155,7 @@ export class TelegramController {
   /**
    * Handle Transaction ID Submission
    */
-  private handleTransactionSubmission = async (chatId: string | number, transactionId: string, userId?: number) => {
+  private handleTransactionSubmission = async (chatId: string | number, transactionId: string, userId?: number, method: string = 'telebirr') => {
       // Basic validation of transaction ID format (e.g., alphanumeric, length)
       const cleanId = transactionId.trim().toUpperCase();
       
@@ -154,7 +163,7 @@ export class TelegramController {
           return this.telegramService.sendMessage(chatId, '❌ Invalid Transaction ID format. Please check and try again.');
       }
 
-      await this.telegramService.sendMessage(chatId, '🔄 Verifying transaction... Please wait.');
+      await this.telegramService.sendMessage(chatId, `🔄 Verifying ${method.toUpperCase()} transaction... Please wait.`);
 
       // Find user by Telegram ID
       const user = await Registration.findOne({ 'telegramData.id': userId });
@@ -163,7 +172,7 @@ export class TelegramController {
       }
 
       // Call PaymentService to verify
-      const result = await paymentService.verifyPayment(cleanId, user._id.toString());
+      const result = await paymentService.verifyPayment(cleanId, user._id.toString(), method);
 
       if (!result.success) {
           return this.telegramService.sendMessage(chatId, `❌ Verification Failed: ${result.message}`);
@@ -203,8 +212,13 @@ export class TelegramController {
     
     switch (action) {
       case 'PAY':
-        const invoiceId = params[0];
-        await this.handlePayInvoice(chatId, invoiceId, userId);
+        const invId = params[0];
+        await this.handlePayInvoice(chatId, invId, userId);
+        break;
+      case 'PMETHOD':
+        const method = params[0];
+        const invoiceId = params[1];
+        await this.handleMethodSelection(chatId, method, invoiceId, userId);
         break;
       case 'myinvoices':
         await this.handleMyInvoices(chatId, userId);
@@ -359,14 +373,13 @@ export class TelegramController {
     }
 
     const eventName = invoice.metadata?.eventName || 'Event';
-    const phone = process.env.TELEBIRR_PHONE_NUMBER || 'Unknown';
 
-    // Send the payment instruction
-    await this.telegramService.sendPaymentInstruction(
+    // Send the payment method selection
+    await this.telegramService.sendPaymentMethodSelection(
         chatId,
         invoice.amount,
-        phone,
-        eventName
+        eventName,
+        invoiceId
     );
   };
 
@@ -423,6 +436,34 @@ export class TelegramController {
     }
 
     await this.telegramService.sendMessage(chatId, message, options);
+  };
+
+  /**
+   * Handle payment method selection
+   */
+  private handleMethodSelection = async (chatId: string | number, method: string, invoiceId: string, userId?: number) => {
+    try {
+      // Import Invoice model
+      const { Invoice } = await import('../models/invoice.model');
+      
+      const invoice = await Invoice.findOne({ invoiceId });
+      
+      if (!invoice) {
+        return this.telegramService.sendMessage(chatId, '❌ Invoice not found.');
+      }
+
+      const eventName = invoice.metadata?.eventName || 'Event';
+      
+      await this.telegramService.sendSpecificPaymentInstruction(
+        chatId,
+        method,
+        invoice.amount,
+        eventName
+      );
+    } catch (error) {
+      console.error('Error in handleMethodSelection:', error);
+      await this.telegramService.sendMessage(chatId, '❌ Failed to process payment method selection.');
+    }
   };
 }
 

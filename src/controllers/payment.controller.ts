@@ -275,10 +275,10 @@ export class PaymentController {
         return res.status(400).json({ errors: errors.array() });
       }
 
-      const { transactionId, userId } = req.body;
+      const { transactionId, userId, method } = req.body;
 
       // Verify payment
-      const result = await paymentService.verifyPayment(transactionId, userId);
+      const result = await paymentService.verifyPayment(transactionId, userId, method);
       
       return res.status(200).json({
         success: result.success,

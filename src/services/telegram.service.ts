@@ -89,37 +89,82 @@ export class TelegramService {
   }
 
   /**
-   * Send payment instruction (Manual Telebirr)
+   * Send payment method selection keyboard
    */
-  async sendPaymentInstruction(
+  async sendPaymentMethodSelection(
     chatId: string | number, 
     amount: number, 
-    phone: string,
-    eventName: string
+    eventName: string,
+    invoiceId: string
   ): Promise<boolean> {
     try {
       const message = `
-💰 <b>Payment Required for ${eventName}</b>
+💰 <b>Payment for ${eventName}</b>
 
-Please transfer <b>${amount} ETB</b> via Telebirr to:
-📱 <b>${phone}</b>
+Amount: <b>${amount} ETB</b>
 
-⚠️ <b>IMPORTANT:</b>
-After paying, you will receive a transaction message from Telebirr.
-Please reply to this message with your <b>Transaction ID</b> (e.g., CL69OU8FEN).
+Please select your preferred payment method:
 `;
 
-      // Use ForceReply to make it easy for the user to reply
+      const replyMarkup = {
+        inline_keyboard: [
+          [
+            { text: 'Telebirr', callback_data: `PMETHOD_telebirr_${invoiceId}` },
+            { text: 'CBE', callback_data: `PMETHOD_cbe_${invoiceId}` },
+            { text: 'BOA', callback_data: `PMETHOD_boa_${invoiceId}` }
+          ]
+        ]
+      };
+
+      return this.sendMessage(chatId, message, { reply_markup: replyMarkup });
+    } catch (error) {
+      console.error('Error sending payment method selection:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Send specific payment instructions based on method
+   */
+  async sendSpecificPaymentInstruction(
+    chatId: string | number,
+    method: string,
+    amount: number,
+    eventName: string
+  ): Promise<boolean> {
+      let phoneOrAccount = '';
+      let bankName = '';
+      
+      const methodKey = method.toLowerCase();
+      
+      if (methodKey === 'telebirr') {
+          phoneOrAccount = process.env.TELEBIRR_PHONE_NUMBER || 'Unknown';
+          bankName = 'Telebirr';
+      } else if (methodKey === 'cbe') {
+          phoneOrAccount = process.env.CBE_ACCOUNT_NUMBER || 'Unknown';
+          bankName = 'CBE Account';
+      } else if (methodKey === 'boa') {
+          phoneOrAccount = process.env.BOA_ACCOUNT_NUMBER || 'Unknown';
+          bankName = 'BOA Account';
+      }
+
+      const message = `
+🏦 <b>${bankName} Payment Instructions</b>
+
+Please transfer <b>${amount} ETB</b> to:
+<b>${phoneOrAccount}</b>
+
+⚠️ <b>IMPORTANT:</b>
+After paying, please reply to this message with your <b>Transaction ID</b>.
+<i>Verification method: ${bankName}</i>
+`;
+
       return this.sendMessage(chatId, message, {
         reply_markup: {
           force_reply: true,
-          input_field_placeholder: 'Enter Transaction ID here...'
+          input_field_placeholder: `Enter ${bankName} Transaction ID...`
         }
       });
-    } catch (error) {
-      console.error('Error sending payment instruction:', error);
-      return false;
-    }
   }
 
   /**
@@ -183,14 +228,12 @@ See you there! 🚀
       if (!user || !user.telegramData?.chatId) return false;
 
       const eventName = invoice.metadata?.eventName || 'Event';
-      const phone = process.env.TELEBIRR_PHONE_NUMBER || 'Unknown';
-
-      // Re-send instruction
-      return this.sendPaymentInstruction(
+      // Re-send selection flow
+      return this.sendPaymentMethodSelection(
           user.telegramData.chatId, 
           invoice.amount, 
-          phone, 
-          eventName
+          eventName,
+          invoiceId
       );
     } catch (error) {
       console.error('Error sending payment reminder:', error);
