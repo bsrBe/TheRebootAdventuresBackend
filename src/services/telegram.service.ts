@@ -24,6 +24,7 @@ export class TelegramService {
    */
   async sendMessage(chatId: string | number, text: string, options: any = {}): Promise<boolean> {
     try {
+      console.log(`Sending Telegram message to ${chatId}: ${text.substring(0, 50)}...`);
       await axios.post(`${this.botApiUrl}/sendMessage`, {
         chat_id: chatId,
         text,
@@ -84,6 +85,23 @@ export class TelegramService {
       if (error.response) {
         console.error('Telegram API Error Response:', error.response.data);
       }
+      return false;
+    }
+  }
+
+  /**
+   * Answer a callback query to acknowledge receipt
+   */
+  async answerCallbackQuery(callbackQueryId: string, text?: string, showAlert: boolean = false): Promise<boolean> {
+    try {
+      await axios.post(`${this.botApiUrl}/answerCallbackQuery`, {
+        callback_query_id: callbackQueryId,
+        text,
+        show_alert: showAlert
+      });
+      return true;
+    } catch (error: any) {
+      console.error('Error answering Telegram callback query:', error.message);
       return false;
     }
   }

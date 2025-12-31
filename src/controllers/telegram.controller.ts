@@ -92,20 +92,40 @@ export class TelegramController {
    */
   public handleWebhook = async (req: Request, res: Response) => {
     try {
-      const { message, callback_query } = req.body;
-      const update = message || callback_query;
-      
-      if (!update) {
-        return res.status(400).json({ success: false, message: 'Invalid update' });
-      }
+      const update = req.body;
+      console.log('--- Telegram Update Received ---');
+      console.log(JSON.stringify(update, null, 2));
 
-      const chatId = update.chat?.id || update.message?.chat?.id;
-      const text = update.text || update.data;
-      const userId = update.from?.id;
+      // Separate message and callback_query
+      const { message, callback_query } = update;
+
+      // Extract basic info
+      let chatId: string | number | undefined;
+      let userId: number | undefined;
+      let text: string | undefined;
+
+      if (message) {
+        chatId = message.chat?.id;
+        userId = message.from?.id;
+        text = message.text;
+      } else if (callback_query) {
+        chatId = callback_query.message?.chat?.id;
+        userId = callback_query.from?.id;
+        text = callback_query.data;
+        
+        // Acknowledge the callback query immediately to stop the loading spinner
+        console.log(`Acknowledging callback query ID: ${callback_query.id}`);
+        await this.telegramService.answerCallbackQuery(callback_query.id).catch(err => 
+          console.error('Failed to answer callback query:', err.message)
+        );
+      }
 
       if (!chatId) {
-        return res.status(400).json({ success: false, message: 'No chat ID provided' });
+        console.log('No chat ID found in update, skipping.');
+        return res.status(200).json({ success: true, message: 'No chat ID' });
       }
+
+      console.log(`Processing update from chatId: ${chatId}, userId: ${userId}, text: ${text}`);
 
       // Handle Reply to Message (Transaction ID submission)
       if (message && message.reply_to_message && message.text) {
@@ -116,7 +136,7 @@ export class TelegramController {
           else if (replyText.includes('Verification method: BOA')) method = 'boa';
           else if (replyText.includes('Verification method: Telebirr')) method = 'telebirr';
 
-          // Process asynchronously to prevent webhook timeout
+          console.log(`Detected transaction submission via reply. Method: ${method}`);
           this.handleTransactionSubmission(chatId, message.text, userId, method).catch(err => 
             console.error('Error in async transaction submission:', err)
           );
@@ -124,11 +144,8 @@ export class TelegramController {
       }
 
       // Handle standalone Transaction ID (10 chars, alphanumeric, starts with letter)
-      // This is a heuristic to improve UX so users don't HAVE to reply
       if (text && !text.startsWith('/') && /^[A-Z0-9]{10}$/i.test(text.trim())) {
-          // For standalone, we might not know the method, fallback to telebirr or try to guess
-          // For now, let's keep it telebirr for standalone to avoid complexity, 
-          // or assume most recent method selection if we had state.
+          console.log('Detected potential standalone transaction ID.');
           this.handleTransactionSubmission(chatId, text, userId, 'telebirr').catch(err => 
             console.error('Error in async transaction submission:', err)
           );
@@ -137,18 +154,20 @@ export class TelegramController {
 
       // Handle commands
       if (text && text.startsWith('/')) {
+        console.log(`Handling command: ${text}`);
         await this.handleCommand(chatId, text, userId);
       }
       
       // Handle callbacks
-      if (update.data) {
-        await this.handleCallback(chatId, update.data, userId);
+      if (callback_query && callback_query.data) {
+        console.log(`Handling callback: ${callback_query.data}`);
+        await this.handleCallback(chatId, callback_query.data, userId);
       }
 
       return res.status(200).json({ success: true });
     } catch (error) {
       console.error('Error handling Telegram webhook:', error);
-      return res.status(500).json({ success: false, message: 'Internal server error' });
+      return res.status(200).json({ success: true, message: 'Silently ignored error' }); // Return 200 to Telegram
     }
   };
 
