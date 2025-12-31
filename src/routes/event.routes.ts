@@ -7,7 +7,8 @@ import {
   updateEventStatus,
   signupForEvent,
   updateEvent,
-  deleteEvent
+  deleteEvent,
+  getEventRegistrations
 } from '../controllers/events.controler';
 
 const router = Router();
@@ -21,5 +22,6 @@ router.post('/', createEvent); // Create new event
 router.patch('/:id/status', updateEventStatus); // Update event status
 router.put('/:id', updateEvent); // Full update of event
 router.delete('/:id', deleteEvent); // Delete event
+router.get('/:id/attendees', getEventRegistrations); // Get event attendees
 
 export default router;

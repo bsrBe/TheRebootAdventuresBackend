@@ -66,14 +66,14 @@ export class DashboardController {
         ...recentRegistrations.map((reg: any) => ({
           id: reg._id,
           type: 'registration',
-          message: `New registration: ${reg.user?.fullName || 'Unknown User'} for "${reg.event?.name || 'Unknown Event'}"`,
+          message: `New registration: ${reg.user?.fullName || 'Unknown User'} for "${reg.event?.name || reg.metadata?.eventName || 'Unknown Event'}"`,
           time: reg.createdAt,
           timestamp: new Date(reg.createdAt).getTime()
         })),
         ...recentPayments.map((inv: any) => ({
           id: inv._id,
           type: 'payment',
-          message: `Payment received from ${inv.user?.fullName || 'Unknown User'} for "${inv.event?.name || 'Unknown Event'}"`,
+          message: `Payment received from ${inv.user?.fullName || 'Unknown User'} for "${inv.event?.name || inv.metadata?.eventName || 'Unknown Event'}"`,
           time: inv.paidAt || inv.createdAt,
           timestamp: new Date(inv.paidAt || inv.createdAt).getTime()
         }))

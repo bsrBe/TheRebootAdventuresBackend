@@ -262,3 +262,65 @@ export const deleteEvent = async (req: Request, res: Response): Promise<void> =>
     res.status(500).json({ success: false, error: 'Server error' });
   }
 };
+
+/**
+ * @desc Get all registrations for an event (Admin only)
+ * @route GET /api/events/:id/attendees
+ */
+export const getEventRegistrations = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const eventId = req.params.id;
+
+    // Import models
+    const { EventRegistration } = await import('../models/event-registration.model');
+    const { Invoice } = await import('../models/invoice.model');
+
+    const registrations = await EventRegistration.find({ event: eventId })
+      .populate('user')
+      .sort({ createdAt: -1 })
+      .lean();
+
+    // Get payment details for each attendee
+    const attendees = await Promise.all(registrations.map(async (reg: any) => {
+      // Find the most recent paid invoice for this user and event
+      // or just any paid invoice if event link is missing but metadata matches
+      const invoice = await Invoice.findOne({
+        user: reg.user?._id,
+        $or: [
+          { event: eventId },
+          { 'metadata.eventName': (await Event.findById(eventId))?.name }
+        ],
+        status: 'paid'
+      }).sort({ paidAt: -1 }).lean();
+
+      return {
+        id: reg._id,
+        user: {
+          id: reg.user?._id,
+          fullName: reg.user?.fullName,
+          email: reg.user?.email,
+          phoneNumber: reg.user?.phoneNumber,
+          telegramUsername: reg.user?.telegramData?.username,
+          experience: reg.user?.horseRidingExperience,
+          age: reg.user?.age,
+          weight: reg.user?.weight,
+          height: reg.user?.height
+        },
+        status: reg.status,
+        paymentStatus: invoice ? 'paid' : 'unpaid',
+        paidAmount: invoice?.amount,
+        paidAt: invoice?.paidAt,
+        registrationDate: reg.createdAt
+      };
+    }));
+
+    res.json({
+      success: true,
+      count: attendees.length,
+      data: attendees
+    });
+  } catch (error) {
+    console.error('Get event registrations error:', error);
+    res.status(500).json({ success: false, error: 'Server error' });
+  }
+};
