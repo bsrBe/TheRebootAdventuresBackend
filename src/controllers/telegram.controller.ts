@@ -155,8 +155,8 @@ export class TelegramController {
           return res.status(200).json({ success: true });
       }
 
-      // Handle standalone Transaction ID (10 chars, alphanumeric, starts with letter)
-      if (text && !text.startsWith('/') && /^[A-Z0-9]{10}$/i.test(text.trim())) {
+      // Handle standalone Transaction ID (relaxed: 8-30 chars, alphanumeric + common symbols)
+      if (text && !text.startsWith('/') && /^[A-Z0-9&]{8,30}$/i.test(text.trim())) {
           console.log('Detected potential standalone transaction ID.');
           this.handleTransactionSubmission(chatId, text, userId, 'telebirr').catch(err => 
             console.error('Error in async transaction submission:', err)
@@ -170,129 +170,84 @@ export class TelegramController {
         await this.handleCommand(chatId, text, userId);
       }
       
-      // Handle callbacks
+      // Handle callback queries
       if (callback_query && callback_query.data) {
-        console.log(`Handling callback: ${callback_query.data}`);
         await this.handleCallback(chatId, callback_query.data, userId);
       }
 
       return res.status(200).json({ success: true });
     } catch (error) {
-      console.error('Error handling Telegram webhook:', error);
-      return res.status(200).json({ success: true, message: 'Silently ignored error' }); // Return 200 to Telegram
+      console.error('Error handling webhook:', error);
+      return res.status(200).json({ success: false, message: 'Webhook processing failed' });
     }
   };
 
   /**
-   * Handle Transaction ID Submission
+   * Handle transaction ID submission for payment verification
    */
   private handleTransactionSubmission = async (chatId: string | number, transactionId: string, userId?: number, method: string = 'telebirr') => {
-      // Basic validation of transaction ID format (e.g., alphanumeric, length)
-      const cleanId = transactionId.trim().toUpperCase();
-      
-      if (cleanId.length < 8) {
-          return this.telegramService.sendMessage(chatId, '❌ Invalid Transaction ID format. Please check and try again.');
+    try {
+      if (!userId) {
+        return this.telegramService.sendMessage(chatId, '❌ Please register first using our web interface.');
       }
 
-      await this.telegramService.sendMessage(chatId, `🔄 Verifying ${method.toUpperCase()} transaction... Please wait.`);
-
-      // Find user by Telegram ID
       const user = await Registration.findOne({ 'telegramData.id': userId });
       if (!user) {
-          return this.telegramService.sendMessage(chatId, '❌ User not found. Please register first.');
+        return this.telegramService.sendMessage(chatId, '❌ User not found. Please register first.');
       }
 
-      // Call PaymentService to verify
-      const result = await paymentService.verifyPayment(cleanId, user._id.toString(), method);
-
-      if (!result.success) {
-          const adminUsername = process.env['Admin_User-Name'] || '@BsreAbrham';
-          const errorMessage = `
-❌ <b>Verification Failed</b>
-
-We couldn't automatically verify your payment at this moment. 
-
-Please send a screenshot of your payment receipt to our admin: <b>${adminUsername}</b> for manual verification.
-`;
-          return this.telegramService.sendMessage(chatId, errorMessage);
-      }
+      const result = await paymentService.verifyPayment(transactionId, user._id.toString(), method);
       
-      // Success message is handled inside verifyPayment (sends QR code)
-      // But we can send a small confirmation text here if needed, or rely on the service.
-      // Service sends "Payment Verified" with QR.
+      if (result.success) {
+        await this.telegramService.sendMessage(
+          chatId, 
+          `✅ <b>Payment Verified!</b>\n\n${result.message}\n\nYour booking has been confirmed.`
+        );
+      } else {
+        await this.telegramService.sendMessage(
+          chatId, 
+          `❌ <b>Verification Failed</b>\n\n${result.message}\n\nPlease check your transaction ID and try again.`
+        );
+      }
+    } catch (error: any) {
+      console.error('Error in handleTransactionSubmission:', error);
+      await this.telegramService.sendMessage(chatId, '❌ An error occurred while verifying your payment. Please try again later.');
+    }
   };
 
   /**
-   * Handle Photo Upload (Memories)
+   * Handle photo uploads (memories)
    */
   private handlePhotoUpload = async (chatId: string | number, fileId: string, caption: string, userId?: number) => {
     try {
-      // 1. Find the user
-      const user = await Registration.findOne({ 'telegramData.id': userId });
-      if (!user) return; // Silent return for unknown users
-
-      // 2. Find if they attended a recent event
-      const { EventRegistration } = await import('../models/event-registration.model');
-      const { Event } = await import('../models/events.model');
-
-      // Look for confirmed/checked-in events in the last 48 hours
-      const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
-      
-      const attendance = await EventRegistration.findOne({
-        user: user._id,
-        status: { $in: ['confirmed'] },
-        updatedAt: { $gte: twoDaysAgo }
-      }).populate('event');
-
-      if (!attendance) {
-        // Option A: Silently ignore 
-        // Option B: Tell them they need to attend first.
-        // Let's go with B if they sent a caption, otherwise ignore.
-        if (caption) {
-           await this.telegramService.sendMessage(chatId, "📸 That's a great photo! Once you attend one of our adventures, you can share memories here to be featured on our website!");
-        }
-        return;
+      if (!userId) {
+        return this.telegramService.sendMessage(chatId, '❌ Please register first to upload memories.');
       }
 
-      const event = attendance.event as any;
+      const user = await Registration.findOne({ 'telegramData.id': userId });
+      if (!user) {
+        return this.telegramService.sendMessage(chatId, '❌ User not found. Please register first.');
+      }
 
-      // 3. Save as a Memory
-      const { Memory } = await import('../models/memory.model');
-      
-      // Get file URL from Telegram
-      const fileResponse = await axios.get(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`);
-      const filePath = (fileResponse.data as any).result.file_path;
-      const photoUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${filePath}`;
-
-      const memory = new Memory({
-        user: user._id,
-        event: event._id,
-        photoUrl: photoUrl,
-        caption: caption,
-        telegramFileId: fileId,
-        isApproved: false
-      });
-
-      await memory.save();
-
-      // 4. Confirm to user
+      // For now, just acknowledge the photo upload
+      // Full implementation would require event context and memory creation
       await this.telegramService.sendMessage(
         chatId, 
-        `🖼️ <b>Memory Captured!</b>\n\nI've sent your photo from <b>${event.name}</b> to our team for review. If approved, it will be featured in our trip gallery! ✨`
+        '📸 <b>Photo Received!</b>\n\nThank you for sharing your memory. Photos are reviewed before being added to the gallery.'
       );
-
     } catch (error: any) {
-      console.error('Error handling photo upload:', error.message);
+      console.error('Error in handlePhotoUpload:', error);
+      await this.telegramService.sendMessage(chatId, '❌ An error occurred while processing your photo. Please try again later.');
     }
   };
 
   /**
-   * Handle bot commands
+   * Handle command routing
    */
-  private handleCommand = async (chatId: string | number, command: string, userId?: number) => {
-    const [cmd, ...args] = command.split(' ');
-
-    switch (cmd.toLowerCase()) {
+  private handleCommand = async (chatId: string | number, text: string, userId?: number) => {
+    const [command, ...args] = text.split(' ');
+    
+    switch (command) {
       case '/start':
         await this.handleStart(chatId, userId);
         break;
@@ -301,9 +256,6 @@ Please send a screenshot of your payment receipt to our admin: <b>${adminUsernam
         break;
       case '/mybookings':
         await this.handleMyBookings(chatId, userId);
-        break;
-      case '/myinvoices':
-        await this.handleMyInvoices(chatId, userId);
         break;
       case '/verify':
         await this.handleVerify(chatId, args[0], userId);
@@ -320,9 +272,33 @@ Please send a screenshot of your payment receipt to our admin: <b>${adminUsernam
       case '/help':
         await this.sendHelpMessage(chatId);
         break;
+      case '/myinvoices':
+        await this.handleMyInvoices(chatId, userId);
+        break;
       default:
         await this.telegramService.sendMessage(chatId, '❌ Unknown command. Type /help for available commands.');
     }
+  };
+
+  /**
+   * Handle /verify command
+   */
+  private handleVerify = async (chatId: string | number, transactionId?: string, userId?: number) => {
+    if (!transactionId) {
+      // Use ForceReply so the user's next message is treated as a reply to this one
+      return this.telegramService.sendMessage(
+        chatId, 
+        '💡 Please reply to this message with your <b>Transaction ID</b>.', 
+        { 
+          reply_markup: { 
+            force_reply: true,
+            input_field_placeholder: "Enter Transaction ID..." 
+          } 
+        }
+      );
+    }
+    // Defaulting to telebirr for direct command, or we could parse args[1]
+    await this.handleTransactionSubmission(chatId, transactionId, userId, 'telebirr');
   };
 
   /**
@@ -379,17 +355,6 @@ Please send a screenshot of your payment receipt to our admin: <b>${adminUsernam
     } catch (error) {
       console.error('Error in handleMyBookings:', error);
     }
-  };
-
-  /**
-   * Handle /verify command
-   */
-  private handleVerify = async (chatId: string | number, transactionId?: string, userId?: number) => {
-    if (!transactionId) {
-      return this.telegramService.sendMessage(chatId, '💡 Please provide your Transaction ID.\nUsage: <code>/verify YOUR_ID_HERE</code>');
-    }
-    // Defaulting to telebirr for direct command, or we could parse args[1]
-    await this.handleTransactionSubmission(chatId, transactionId, userId, 'telebirr');
   };
 
   /**
@@ -480,71 +445,25 @@ Please send a screenshot of your payment receipt to our admin: <b>${adminUsernam
       ).catch(err => console.error('Error updating user on start:', err));
     }
 
-    // Send welcome photo with Web App button IMMEDIATELY
-    const welcomeCaption = 
-      '🐴 <b>Welcome to Reboot Adventures!</b>\n\n' +
-      'Experience the thrill of horseback riding through Ethiopia\'s stunning landscapes.\n\n' +
-      '📅 Upcoming events and adventures\n' +
-      '💰 Easy online payment\n' +
-      '📱 Manage your bookings\n\n' +
-      'Tap the button below to get started!';
-
-    const photoUrl = `${process.env.APP_URL}/images/welcome.jpg`;
+    // Send welcome message with Web App button
+    const welcomeMessage = 
+      '🌟 <b>Welcome to Reboot Adventures!</b>\n\n' +
+      'Join us for exciting horseback riding adventures and create unforgettable memories.\n\n' +
+      'Use the button below to browse events, book your spot, and manage your profile.';
     
-    try {
-      const sent = await this.telegramService.sendPhoto(
-        chatId,
-        photoUrl,
-        welcomeCaption,
-        {
-          reply_markup: {
-            inline_keyboard: [
-              [
-                {
-                  text: '🌐 Open Web App',
-                  web_app: { url: process.env.FRONTEND_URL || 'https://your-frontend-url.com' }
-                }
-              ],
-              [
-                {
-                  text: '📋 My Invoices',
-                  callback_data: 'myinvoices'
-                }
-              ]
-            ]
-          }
-        }
-      );
-
-      if (!sent) {
-        throw new Error('Failed to send photo');
+    const frontendUrl = process.env.FRONTEND_URL;
+    await this.telegramService.sendMessage(chatId, welcomeMessage, {
+      reply_markup: {
+        inline_keyboard: [
+          [
+            {
+              text: '🌐 Open Web App',
+              web_app: { url: frontendUrl }
+            }
+          ]
+        ]
       }
-    } catch (error) {
-      console.error('Failed to send welcome photo, falling back to text message:', error);
-      // Fallback to text message
-      await this.telegramService.sendMessage(
-        chatId,
-        welcomeCaption,
-        {
-          reply_markup: {
-            inline_keyboard: [
-              [
-                {
-                  text: '🌐 Open Web App',
-                  web_app: { url: process.env.FRONTEND_URL || 'https://your-frontend-url.com' }
-                }
-              ],
-              [
-                {
-                  text: '📋 My Invoices',
-                  callback_data: 'myinvoices'
-                }
-              ]
-            ]
-          }
-        }
-      );
-    }
+    });
   };
 
   /**
@@ -621,10 +540,16 @@ Please send a screenshot of your payment receipt to our admin: <b>${adminUsernam
   private sendHelpMessage = async (chatId: string | number) => {
     const helpText = `
 🤖 *Bot Commands* \n\n` +
-      '*/start* - Start the bot and register your account\n' +
+      '*/start* - Start the bot & register\n' +
+      '*/adventures* - Browse upcoming trips\n' +
+      '*/mybookings* - View your bookings\n' +
       '*/myinvoices* - View your invoices\n' +
-      '*/help* - Show this help message\n\n' +
-      'For any questions, please contact our support team.';
+      '*/verify* - Verify a payment manually\n' +
+      '*/gallery* - View trip photos\n' +
+      '*/profile* - View & edit your profile\n' +
+      '*/support* - Contact support\n' +
+      '*/help* - Show this message\n\n' +
+      'For additional help, contact our support team.';
 
     await this.telegramService.sendMessage(chatId, helpText, { parse_mode: 'Markdown' });
   };

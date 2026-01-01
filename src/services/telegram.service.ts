@@ -287,4 +287,58 @@ See you there! 🚀
       return { success: 0, failed: 0 };
     }
   }
+
+  /**
+   * Set bot commands menu
+   */
+  async setMyCommands(commands: { command: string; description: string }[]): Promise<boolean> {
+    try {
+      await axios.post(`${this.botApiUrl}/setMyCommands`, {
+        commands
+      });
+      console.log('Bot commands updated successfully');
+      return true;
+    } catch (error: any) {
+      console.error('Error setting bot commands:', error.message);
+      return false;
+    }
+  }
+
+  /**
+   * Set chat menu button
+   */
+  async setChatMenuButton(chatId?: string | number, type: 'default' | 'commands' | 'web_app' = 'default', webAppUrl?: string): Promise<boolean> {
+      try {
+          // First set the web app menu button
+          const body: any = { type };
+          if (chatId) body.chat_id = chatId;
+          if (type === 'web_app' && webAppUrl) {
+              body.web_app = { url: webAppUrl };
+              body.text = "Open Web App"; // Required for web_app type
+          }
+          
+          await axios.post(`${this.botApiUrl}/setChatMenuButton`, {
+              menu_button: body
+          });
+
+          // If this is for a specific chat, also set up the commands menu
+          if (chatId) {
+              await this.sendMessage(chatId, 'Welcome to Rebbot Adventures! Here are your available commands:', {
+                  reply_markup: {
+                      keyboard: [
+                          [{ text: '📋 Show Commands', web_app: { url: webAppUrl || '' } }],
+                          [{ text: '🌐 Open Web App', web_app: { url: webAppUrl || '' } }]
+                      ],
+                      resize_keyboard: true,
+                      one_time_keyboard: false
+                  }
+              });
+          }
+          
+          return true;
+      } catch (error: any) {
+          console.error('Error setting chat menu button:', error.message);
+          return false;
+      }
+  }
 }
