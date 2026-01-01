@@ -138,8 +138,17 @@ export class TelegramController {
           else if (replyText.includes('Verification method: BOA')) method = 'boa';
           else if (replyText.includes('Verification method: Telebirr')) method = 'telebirr';
 
-          console.log(`Detected transaction submission via reply. Transaction ID: ${transactionId}, Method: ${method}, UserId: ${userId}`);
-          await this.handleTransactionSubmission(chatId, transactionId, userId, method);
+          // Extract event name from payment instruction message (format: "Payment for [EventName]")
+          let eventName: string | undefined;
+          const paymentForMatch = replyText.match(/Payment for (.+?)(\n|$)/i);
+          if (paymentForMatch) {
+            eventName = paymentForMatch[1].trim();
+          }
+
+          console.log(`Detected transaction submission via reply. Transaction ID: ${transactionId}, Method: ${method}, EventName: ${eventName}, UserId: ${userId}`);
+          this.handleTransactionSubmission(chatId, transactionId, userId, method, eventName).catch(err => 
+            console.error('Error in async transaction submission:', err)
+          );
           return res.status(200).json({ success: true });
       }
 
@@ -157,7 +166,9 @@ export class TelegramController {
       // Handle standalone Transaction ID (relaxed: 8-30 chars, alphanumeric + common symbols)
       if (text && !text.startsWith('/') && /^[A-Z0-9&]{8,30}$/i.test(text.trim())) {
           console.log(`Detected potential standalone transaction ID: ${text.trim()}, UserId: ${userId}`);
-          await this.handleTransactionSubmission(chatId, text.trim(), userId, 'telebirr');
+          this.handleTransactionSubmission(chatId, text.trim(), userId, 'telebirr').catch(err => 
+            console.error('Error in async transaction submission:', err)
+          );
           return res.status(200).json({ success: true });
       }
 
@@ -182,7 +193,7 @@ export class TelegramController {
   /**
    * Handle transaction ID submission for payment verification
    */
-  private handleTransactionSubmission = async (chatId: string | number, transactionId: string, userId?: number, method: string = 'telebirr') => {
+  private handleTransactionSubmission = async (chatId: string | number, transactionId: string, userId?: number, method: string = 'telebirr', eventName?: string) => {
     try {
       if (!userId) {
         return this.telegramService.sendMessage(chatId, '❌ Please register first using our web interface.');
@@ -193,14 +204,21 @@ export class TelegramController {
         return this.telegramService.sendMessage(chatId, '❌ User not found. Please register first.');
       }
 
-      const result = await paymentService.verifyPayment(transactionId, user._id.toString(), method);
+      const result = await paymentService.verifyPayment(transactionId, user._id.toString(), method, eventName);
       
-      if (result.success) {
+      // If invoice exists in result, the service already sent the QR code message
+      // Only send additional message if no invoice was returned (shouldn't happen but safety check)
+      if (result.success && result.invoice) {
+        // Service already sent QR code with message, no need to send duplicate
+        return;
+      } else if (result.success) {
+        // Success but no invoice (shouldn't normally happen)
         await this.telegramService.sendMessage(
           chatId, 
           `✅ <b>Payment Verified!</b>\n\n${result.message}\n\nYour booking has been confirmed.`
         );
       } else {
+        // Verification failed
         await this.telegramService.sendMessage(
           chatId, 
           `❌ <b>Verification Failed</b>\n\n${result.message}\n\nPlease check your transaction ID and try again.`

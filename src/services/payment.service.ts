@@ -87,7 +87,7 @@ export class PaymentService {
   /**
    * Verify payment manually via various payment methods (Telebirr, CBE, BOA)
    */
-  async verifyPayment(transactionId: string, userId: string, method: string = 'telebirr'): Promise<{ success: boolean; message: string; invoice?: any }> {
+  async verifyPayment(transactionId: string, userId: string, method: string = 'telebirr', eventName?: string): Promise<{ success: boolean; message: string; invoice?: any }> {
     try {
       console.log(`Verifying ${method} transaction: ${transactionId} for user ${userId}`);
       
@@ -109,18 +109,16 @@ export class PaymentService {
         return { success: false, message: 'Invalid transaction receipt' };
       }
 
-      // 2. Check if user has already paid for this event first
+      // 2. Check if this transaction ID was already used
       const { Invoice } = await import('../models/invoice.model');
       
-      // Check if there's already a paid invoice for this event based on amount
-      // We'll check paid invoices with the same amount to determine the event
+      // Check if this transaction ID was already used (to prevent duplicate verification)
       const existingPaidInvoice = await Invoice.findOne({
-        user: userId,
-        amount: receipt.amount,
+        transactionId: transactionId,
         status: 'paid'
-      }).sort({ createdAt: -1 });
+      });
       
-      if (existingPaidInvoice) {
+      if (existingPaidInvoice && existingPaidInvoice.user.toString() === userId) {
         // Resend QR code for existing payment
         try {
           const { Registration } = await import('../models/user.model');
@@ -165,22 +163,44 @@ export class PaymentService {
         } catch (qrError: any) {
           console.error('Failed to resend QR code:', qrError.message);
           console.error('Full QR error:', qrError);
-          // Continue even if QR resend fails
+          // If QR resend fails, return error
+          return { 
+            success: false, 
+            message: `Already paid for event: ${existingPaidInvoice.metadata?.eventName || 'Event'}. Your payment was verified on ${existingPaidInvoice.paidAt?.toLocaleDateString()}. Failed to resend QR code.`,
+            invoice: existingPaidInvoice
+          };
         }
         
+        // QR code was successfully sent, return success
         return { 
-          success: false, 
-          message: `Already paid for event: ${existingPaidInvoice.metadata?.eventName || 'Event'}. Your payment was verified on ${existingPaidInvoice.paidAt?.toLocaleDateString()}. QR code has been resent.`,
+          success: true, 
+          message: `QR code resent for ${existingPaidInvoice.metadata?.eventName || 'Event'}. Your payment was verified on ${existingPaidInvoice.paidAt?.toLocaleDateString()}.`,
           invoice: existingPaidInvoice
         };
       }
       
-      // Find pending invoice for this user - check if paid amount >= invoice amount
-      const pendingInvoice = await Invoice.findOne({ 
-        user: userId,
-        amount: { $lte: receipt.amount }, // Invoice amount should be less than or equal to paid amount
-        status: 'pending'
-      }).sort({ createdAt: -1 });
+      // Find pending invoice for this user
+      // If eventName is provided, prioritize matching by event name, then by amount
+      let pendingInvoice;
+      
+      if (eventName) {
+        // First try to find invoice matching event name exactly
+        pendingInvoice = await Invoice.findOne({ 
+          user: userId,
+          'metadata.eventName': eventName,
+          amount: { $lte: receipt.amount },
+          status: 'pending'
+        }).sort({ createdAt: -1 });
+      }
+      
+      // If not found and eventName was provided, or if eventName wasn't provided, try without event name
+      if (!pendingInvoice) {
+        pendingInvoice = await Invoice.findOne({ 
+          user: userId,
+          amount: { $lte: receipt.amount }, // Invoice amount should be less than or equal to paid amount
+          status: 'pending'
+        }).sort({ createdAt: -1 });
+      }
 
       if (!pendingInvoice) {
         return { success: false, message: `No pending invoice found for amount ${receipt.amount} ETB. Looking for invoice <= ${receipt.amount} ETB` };

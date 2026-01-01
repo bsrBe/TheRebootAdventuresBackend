@@ -169,7 +169,11 @@ Please select your preferred payment method:
       const message = `
 🏦 <b>${bankName} Payment Instructions</b>
 
-Please transfer <b>${amount} ETB</b> to:
+💰 Payment for <b>${eventName}</b>
+
+Amount: <b>${amount} ETB</b>
+
+Please transfer to:
 <b>${phoneOrAccount}</b>
 
 ⚠️ <b>IMPORTANT:</b>
