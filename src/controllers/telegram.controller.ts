@@ -96,8 +96,9 @@ export class TelegramController {
       console.log('--- Telegram Update Received ---');
       console.log(JSON.stringify(update, null, 2));
 
-      // Separate message and callback_query
+      // Separate message, callback_query, and photo
       const { message, callback_query } = update;
+      const photo = message?.photo;
 
       // Extract basic info
       let chatId: string | number | undefined;
@@ -139,6 +140,17 @@ export class TelegramController {
           console.log(`Detected transaction submission via reply. Method: ${method}`);
           this.handleTransactionSubmission(chatId, message.text, userId, method).catch(err => 
             console.error('Error in async transaction submission:', err)
+          );
+          return res.status(200).json({ success: true });
+      }
+
+      // Handle Photos (Memories)
+      if (photo && photo.length > 0) {
+          console.log('Detected photo upload. Potentially a memory.');
+          const fileId = photo[photo.length - 1].file_id; // Get highest resolution
+          const caption = message.caption || '';
+          this.handlePhotoUpload(chatId, fileId, caption, userId).catch(err => 
+            console.error('Error in async photo upload:', err)
           );
           return res.status(200).json({ success: true });
       }
@@ -211,6 +223,70 @@ Please send a screenshot of your payment receipt to our admin: <b>${adminUsernam
   };
 
   /**
+   * Handle Photo Upload (Memories)
+   */
+  private handlePhotoUpload = async (chatId: string | number, fileId: string, caption: string, userId?: number) => {
+    try {
+      // 1. Find the user
+      const user = await Registration.findOne({ 'telegramData.id': userId });
+      if (!user) return; // Silent return for unknown users
+
+      // 2. Find if they attended a recent event
+      const { EventRegistration } = await import('../models/event-registration.model');
+      const { Event } = await import('../models/events.model');
+
+      // Look for confirmed/checked-in events in the last 48 hours
+      const twoDaysAgo = new Date(Date.now() - 48 * 60 * 60 * 1000);
+      
+      const attendance = await EventRegistration.findOne({
+        user: user._id,
+        status: { $in: ['confirmed'] },
+        updatedAt: { $gte: twoDaysAgo }
+      }).populate('event');
+
+      if (!attendance) {
+        // Option A: Silently ignore 
+        // Option B: Tell them they need to attend first.
+        // Let's go with B if they sent a caption, otherwise ignore.
+        if (caption) {
+           await this.telegramService.sendMessage(chatId, "📸 That's a great photo! Once you attend one of our adventures, you can share memories here to be featured on our website!");
+        }
+        return;
+      }
+
+      const event = attendance.event as any;
+
+      // 3. Save as a Memory
+      const { Memory } = await import('../models/memory.model');
+      
+      // Get file URL from Telegram
+      const fileResponse = await axios.get(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`);
+      const filePath = (fileResponse.data as any).result.file_path;
+      const photoUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${filePath}`;
+
+      const memory = new Memory({
+        user: user._id,
+        event: event._id,
+        photoUrl: photoUrl,
+        caption: caption,
+        telegramFileId: fileId,
+        isApproved: false
+      });
+
+      await memory.save();
+
+      // 4. Confirm to user
+      await this.telegramService.sendMessage(
+        chatId, 
+        `🖼️ <b>Memory Captured!</b>\n\nI've sent your photo from <b>${event.name}</b> to our team for review. If approved, it will be featured in our trip gallery! ✨`
+      );
+
+    } catch (error: any) {
+      console.error('Error handling photo upload:', error.message);
+    }
+  };
+
+  /**
    * Handle bot commands
    */
   private handleCommand = async (chatId: string | number, command: string, userId?: number) => {
@@ -220,8 +296,26 @@ Please send a screenshot of your payment receipt to our admin: <b>${adminUsernam
       case '/start':
         await this.handleStart(chatId, userId);
         break;
+      case '/adventures':
+        await this.handleAdventures(chatId);
+        break;
+      case '/mybookings':
+        await this.handleMyBookings(chatId, userId);
+        break;
       case '/myinvoices':
         await this.handleMyInvoices(chatId, userId);
+        break;
+      case '/verify':
+        await this.handleVerify(chatId, args[0], userId);
+        break;
+      case '/profile':
+        await this.handleProfile(chatId, userId);
+        break;
+      case '/gallery':
+        await this.handleGallery(chatId);
+        break;
+      case '/support':
+        await this.sendSupportMessage(chatId);
         break;
       case '/help':
         await this.sendHelpMessage(chatId);
@@ -229,6 +323,119 @@ Please send a screenshot of your payment receipt to our admin: <b>${adminUsernam
       default:
         await this.telegramService.sendMessage(chatId, '❌ Unknown command. Type /help for available commands.');
     }
+  };
+
+  /**
+   * Handle /adventures command
+   */
+  private handleAdventures = async (chatId: string | number) => {
+    try {
+      const { Event } = await import('../models/events.model');
+      const events = await Event.find({ isActive: true }).sort({ date: 1 }).limit(5);
+
+      if (events.length === 0) {
+        return this.telegramService.sendMessage(chatId, '📭 No upcoming adventures at the moment. Stay tuned!');
+      }
+
+      const message = '🌟 <b>Upcoming Adventures</b>\n\n' + 
+        events.map(e => `📍 <b>${e.name}</b>\n📅 ${new Date(e.date).toLocaleDateString()}\n💰 ${e.price} ETB\n`).join('\n') +
+        '\nTap the button below to book your spot!';
+
+      await this.telegramService.sendMessage(chatId, message, {
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: '🌐 Browse & Book', web_app: { url: `${process.env.FRONTEND_URL}/events` } }]
+          ]
+        }
+      });
+    } catch (error) {
+      console.error('Error in handleAdventures:', error);
+    }
+  };
+
+  /**
+   * Handle /mybookings command
+   */
+  private handleMyBookings = async (chatId: string | number, userId?: number) => {
+    try {
+      if (!userId) return;
+      const user = await Registration.findOne({ 'telegramData.id': userId });
+      if (!user) return this.telegramService.sendMessage(chatId, '❌ Please register first.');
+
+      const { EventRegistration } = await import('../models/event-registration.model');
+      const bookings = await EventRegistration.find({ user: user._id }).populate('event').sort({ createdAt: -1 });
+
+      if (bookings.length === 0) {
+        return this.telegramService.sendMessage(chatId, "📅 You haven't booked any adventures yet! Type /adventures to see what's coming up.");
+      }
+
+      const message = '📋 <b>Your Bookings</b>\n\n' + 
+        bookings.map((b: any) => {
+            const statusEmoji = b.status === 'confirmed' ? '✅' : '⏳';
+            return `🏇 <b>${b.event?.name}</b>\nStatus: ${statusEmoji} ${b.status.toUpperCase()}`;
+        }).join('\n\n');
+
+      await this.telegramService.sendMessage(chatId, message);
+    } catch (error) {
+      console.error('Error in handleMyBookings:', error);
+    }
+  };
+
+  /**
+   * Handle /verify command
+   */
+  private handleVerify = async (chatId: string | number, transactionId?: string, userId?: number) => {
+    if (!transactionId) {
+      return this.telegramService.sendMessage(chatId, '💡 Please provide your Transaction ID.\nUsage: <code>/verify YOUR_ID_HERE</code>');
+    }
+    // Defaulting to telebirr for direct command, or we could parse args[1]
+    await this.handleTransactionSubmission(chatId, transactionId, userId, 'telebirr');
+  };
+
+  /**
+   * Handle /profile command
+   */
+  private handleProfile = async (chatId: string | number, userId?: number) => {
+    try {
+      if (!userId) return;
+      const user = await Registration.findOne({ 'telegramData.id': userId });
+      if (!user) return this.telegramService.sendMessage(chatId, '❌ Profile not found.');
+
+      const message = `👤 <b>Your Profile</b>\n\n` +
+        `Name: <b>${user.fullName}</b>\n` +
+        `Phone: <b>${user.phoneNumber || 'N/A'}</b>\n` +
+        `Experience: <b>${user.horseRidingExperience || 'Beginner'}</b>\n` +
+        `Age: <b>${user.age || 'N/A'}</b>`;
+
+      await this.telegramService.sendMessage(chatId, message, {
+        reply_markup: {
+          inline_keyboard: [[{ text: '✏️ Edit Profile', web_app: { url: `${process.env.FRONTEND_URL}/profile` } }]]
+        }
+      });
+    } catch (error) {
+      console.error('Error in handleProfile:', error);
+    }
+  };
+
+  /**
+   * Handle /gallery command
+   */
+  private handleGallery = async (chatId: string | number) => {
+    const message = '🖼️ <b>Reboot Adventures Gallery</b>\n\nRelive the best moments from our community trips! Check out our photo gallery below.';
+    await this.telegramService.sendMessage(chatId, message, {
+      reply_markup: {
+        inline_keyboard: [[{ text: '📸 Open Gallery', web_app: { url: `${process.env.FRONTEND_URL}/gallery` } }]]
+      }
+    });
+  };
+
+  /**
+   * Send support message
+   */
+  private sendSupportMessage = async (chatId: string | number) => {
+    const adminUsername = process.env['Admin_User-Name'] || '@BsreAbrham';
+    const message = `🤝 <b>Need Help?</b>\n\nOur team is here to assist you with bookings, payments, or any questions.\n\n📱 <b>Support:</b> ${adminUsername}`;
+    await this.telegramService.sendMessage(chatId, message);
   };
 
   /**
@@ -258,24 +465,22 @@ Please send a screenshot of your payment receipt to our admin: <b>${adminUsernam
    * Handle /start command
    */
   private handleStart = async (chatId: string | number, userId?: number) => {
-    if (!userId) {
-      return this.telegramService.sendMessage(chatId, 'Welcome! Please use our web interface to register first.');
+    // Update user's telegram data if they exist, but don't block the welcome message
+    if (userId) {
+       await Registration.findOneAndUpdate(
+        { 'telegramData.id': userId },
+        {
+          $set: {
+            'telegramData.chatId': chatId,
+            'telegramData.last_activity': new Date(),
+            'telegramData.is_subscribed': true
+          }
+        },
+        { new: true }
+      ).catch(err => console.error('Error updating user on start:', err));
     }
 
-    // Update user's telegram data if they exist
-    await Registration.findOneAndUpdate(
-      { 'telegramData.id': userId },
-      {
-        $set: {
-          'telegramData.chatId': chatId,
-          'telegramData.last_activity': new Date(),
-          'telegramData.is_subscribed': true
-        }
-      },
-      { new: true }
-    );
-
-    // Send welcome photo with Web App button
+    // Send welcome photo with Web App button IMMEDIATELY
     const welcomeCaption = 
       '🐴 <b>Welcome to Reboot Adventures!</b>\n\n' +
       'Experience the thrill of horseback riding through Ethiopia\'s stunning landscapes.\n\n' +

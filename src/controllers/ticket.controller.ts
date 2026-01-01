@@ -47,14 +47,33 @@ export class TicketController {
         event = await Event.findOne({ name: invoice.metadata.eventName });
       }
 
+      // Get registration details
+      const { EventRegistration } = await import('../models/event-registration.model');
+      let registration = await EventRegistration.findOne({
+          user: invoice.user,
+          event: invoice.event
+      });
+
+      if (!registration && invoice.metadata?.eventName) {
+          const { Event: EventModel } = await import('../models/events.model');
+          const eventRecord = await EventModel.findOne({ name: invoice.metadata.eventName });
+          if (eventRecord) {
+              registration = await EventRegistration.findOne({
+                  user: invoice.user,
+                  event: eventRecord._id
+              });
+          }
+      }
+
       // Log the verification
-      console.log(`Ticket verified: ${ticketData.invoiceId} for user ${user?.fullName}`);
+      console.log(`Ticket verified: ${ticketData.invoiceId} for user ${user?.fullName}, Status: ${ticketData.status}`);
 
       // Prepare data for the template
       const ticketInfo = {
         success: true,
         data: {
           ticket: ticketData,
+          registration: registration,
           invoice: {
             invoiceId: invoice.invoiceId,
             amount: invoice.amount,
@@ -90,33 +109,29 @@ export class TicketController {
     } catch (error: any) {
       console.error('Ticket verification error:', error.message);
       
-      // Return appropriate error based on error type
+      let errorTitle = 'Verification Failed';
+      let errorMessage = 'We couldn\'t verify this ticket at the moment.';
+      let errorCode = 'VERIFY_ERROR';
+
       if (error.message.includes('Invalid signature')) {
-        return res.status(400).json({ 
-          success: false, 
-          message: 'Invalid ticket - possible fraud attempt detected' 
-        });
+        errorTitle = 'Invalid Ticket';
+        errorMessage = 'This ticket appears to be invalid or tempered with.';
+        errorCode = 'INVALID_SIGNATURE';
+      } else if (error.message.includes('expired')) {
+        errorTitle = 'Ticket Expired';
+        errorMessage = 'This ticket has already expired and is no longer valid.';
+        errorCode = 'TICKET_EXPIRED';
+      } else if (error.message.includes('not found')) {
+        errorTitle = 'Ticket Not Found';
+        errorMessage = 'We couldn\'t find any active ticket matching this reference.';
+        errorCode = 'TICKET_NOT_FOUND';
       }
       
-      if (error.message.includes('expired')) {
-        return res.status(410).json({ 
-          success: false, 
-          message: 'Ticket has expired' 
-        });
-      }
-      
-      if (error.message.includes('not found')) {
-    return res.status(404).render('error', {
-    success: false,
-    error: 'Ticket Not Found',
-    message: 'The ticket could not be found or has expired.',
-    code: 'TICKET_NOT_FOUND'
-  }); 
-      }
-      
-      return res.status(500).json({ 
-        success: false, 
-        message: 'Failed to verify ticket' 
+      return res.status(400).render('error', {
+        success: false,
+        error: errorTitle,
+        message: errorMessage,
+        code: errorCode
       });
     }
   }
@@ -136,20 +151,117 @@ export class TicketController {
         });
       }
 
-      // Verify the QR reference first
+      // 1. Verify the QR reference first
       const ticketData = await qrService.verifyTicketReference(reference);
       
-      // Check if already used (you'd implement this tracking)
-      // For now, we'll just return success
+      // 2. Fetch all necessary details for rich response
+      const invoice = await Invoice.findOne({ invoiceId: ticketData.invoiceId }).populate('user');
+      const user = invoice ? await Registration.findById(invoice.user) : null;
       
-      console.log(`Ticket marked as used: ${ticketData.invoiceId}`);
+      const attendeeInfo = {
+        fullName: user?.fullName || 'Unknown Attendee',
+        email: user?.email || '',
+        phoneNumber: user?.phoneNumber || '',
+        telegramUsername: user?.telegramData?.username || '',
+        // Full Profile Data
+        age: user?.age,
+        weight: user?.weight,
+        height: user?.height,
+        horseRidingExperience: user?.horseRidingExperience,
+        // Payment Data
+        invoiceId: invoice?.invoiceId,
+        paidAmount: invoice?.amount,
+        currency: invoice?.currency,
+        receiptData: invoice?.receiptData,
+        // Event Data (from ticketData)
+        event: ticketData.eventName,
+        ticketStatus: ticketData.status,
+      };
+
+      let eventId: any = invoice?.event;
+      
+      // Fallback: Find event by name if ID is missing in invoice (legacy data)
+      if (!eventId && invoice?.metadata?.eventName) {
+        const { Event: EventModel } = await import('../models/events.model');
+        const eventRecord = await EventModel.findOne({ name: invoice.metadata.eventName });
+        if (eventRecord) {
+          eventId = eventRecord._id as any;
+        }
+      }
+
+      // Fetch full event details immediately for rich response
+      let fullEvent = null;
+      if (eventId) {
+        const { Event: EventModel } = await import('../models/events.model');
+        fullEvent = await EventModel.findById(eventId);
+      }
+
+      if (ticketData.status === 'used' || ticketData.status === 'expired') {
+        const { EventRegistration } = await import('../models/event-registration.model');
+        const reg = await EventRegistration.findOne({ user: invoice?.user, event: eventId });
+        
+        return res.status(400).json({
+          success: false,
+          message: ticketData.status === 'expired' ? 'This ticket has expired' : 'Ticket has already been used',
+          data: { 
+            ...attendeeInfo, 
+            usedAt: reg?.checkedInAt,
+            eventDetails: fullEvent ? {
+              location: fullEvent.location,
+              date: fullEvent.date,
+              capacity: fullEvent.capacity
+            } : null
+          }
+        });
+      }
+
+      if (!invoice || !eventId) {
+        return res.status(404).json({ success: false, message: 'Associated event not found', data: attendeeInfo });
+      }
+
+      // 3. Find and update the registration
+      const { EventRegistration } = await import('../models/event-registration.model');
+      let registration = await EventRegistration.findOne({
+        user: invoice.user,
+        event: eventId as any
+      });
+
+      // Fallback for registration if not found by ID
+      if (!registration) {
+          registration = await EventRegistration.findOne({
+              user: invoice.user,
+          }).populate('event');
+      }
+
+      if (!registration) {
+        return res.status(404).json({ success: false, message: 'Registration not found', data: attendeeInfo });
+      }
+
+      if (registration.checkedIn) {
+        return res.status(400).json({ 
+          success: false, 
+          message: 'User already checked in',
+          data: { ...attendeeInfo, usedAt: registration.checkedInAt }
+        });
+      }
+
+      registration.checkedIn = true;
+      registration.checkedInAt = new Date();
+      await registration.save();
+      
+      console.log(`Ticket marked as used: ${ticketData.invoiceId} for user ${user?.fullName}`);
 
       return res.status(200).json({
         success: true,
-        message: 'Ticket marked as used successfully',
+        message: 'Checked in successfully!',
         data: {
-          ticket: ticketData,
-          usedAt: new Date()
+          ...attendeeInfo,
+          usedAt: registration.checkedInAt,
+          eventDetails: fullEvent ? {
+            location: fullEvent.location,
+            date: fullEvent.date,
+            capacity: fullEvent.capacity
+          } : null
         }
       });
 
@@ -158,7 +270,7 @@ export class TicketController {
       
       return res.status(500).json({ 
         success: false, 
-        message: 'Failed to mark ticket as used' 
+        message: error.message || 'Failed to mark ticket as used' 
       });
     }
   }
@@ -197,6 +309,51 @@ export class TicketController {
         success: false, 
         message: 'Failed to get ticket status' 
       });
+    }
+  }
+
+  /**
+   * Mark attendee as checked in manually by registration ID
+   * POST /ticket/checkin/:registrationId
+   */
+  public async checkInManual(req: Request, res: Response) {
+    try {
+      const { registrationId } = req.params;
+
+      if (!registrationId) {
+        return res.status(400).json({ success: false, message: 'Registration ID is required' });
+      }
+
+      const { EventRegistration } = await import('../models/event-registration.model');
+      const registration = await EventRegistration.findById(registrationId);
+
+      if (!registration) {
+        return res.status(404).json({ success: false, message: 'Registration not found' });
+      }
+
+      if (registration.checkedIn) {
+        return res.status(400).json({ success: false, message: 'User already checked in' });
+      }
+
+      registration.checkedIn = true;
+      registration.checkedInAt = new Date();
+      await registration.save();
+
+      // Find user to return name
+      const { Registration } = await import('../models/user.model');
+      const user = await Registration.findById(registration.user);
+
+      return res.status(200).json({
+        success: true,
+        message: 'Manual check-in successful',
+        data: {
+          userName: user?.fullName || 'User',
+          usedAt: registration.checkedInAt
+        }
+      });
+    } catch (error: any) {
+      console.error('Manual check-in error:', error.message);
+      return res.status(500).json({ success: false, message: error.message || 'Failed to check in manually' });
     }
   }
 }

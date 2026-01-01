@@ -1,172 +1,192 @@
 <!DOCTYPE html>
 <html lang="en">
+
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Ticket - <%= data.event.name %></title>
-  
+  <title>Ticket - <%= data.event.name %>
+  </title>
+
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap" rel="stylesheet">
-  
-<style>
-  /* Global Reset & Base */
-  body {
-    font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
-    line-height: 1.6;
-    margin: 0;
-    padding: 0;
-    min-height: 100vh;
-    color: #F7F7F7; /* Light text for dark background */
 
-    /* Premium Dark Background: Deep Navy/Black Gradient */
-    background: radial-gradient(circle at top left, rgba(10, 10, 25, 1) 0%, rgba(5, 5, 15, 1) 100%);
-    
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 30px 15px;
-  }
+  <style>
+    /* Global Reset & Base */
+    body {
+      font-family: 'Inter', 'Helvetica Neue', Arial, sans-serif;
+      line-height: 1.6;
+      margin: 0;
+      padding: 0;
+      min-height: 100vh;
+      color: #F7F7F7;
+      /* Light text for dark background */
 
-  /* --- Ticket Container: Glassmorphism Effect --- */
-  .ticket {
-    background: rgba(25, 25, 35, 0.7); /* Slightly translucent dark background */
-    backdrop-filter: blur(15px); /* Stronger blur for "glass" effect */
-    border-radius: 20px;
+      /* Premium Dark Background: Deep Navy/Black Gradient */
+      background: radial-gradient(circle at top left, rgba(10, 10, 25, 1) 0%, rgba(5, 5, 15, 1) 100%);
 
-    padding: 40px;
-    width: 100%;
-    max-width: 650px; /* Optimal width for a digital ticket */
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 30px 15px;
+    }
 
-    border: 1px solid rgba(255, 215, 0, 0.3); /* Subtle gold edge */
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45); /* Soft, deep shadow */
+    /* --- Ticket Container: Glassmorphism Effect --- */
+    .ticket {
+      background: rgba(25, 25, 35, 0.7);
+      /* Slightly translucent dark background */
+      backdrop-filter: blur(15px);
+      /* Stronger blur for "glass" effect */
+      border-radius: 20px;
 
-    position: relative;
-    z-index: 2; /* Ensure ticket is above background image */
-  }
+      padding: 40px;
+      width: 100%;
+      max-width: 650px;
+      /* Optimal width for a digital ticket */
 
-  /* Header/Title */
-  .header {
-    text-align: center;
-    margin-bottom: 30px;
-  }
+      border: 1px solid rgba(255, 215, 0, 0.3);
+      /* Subtle gold edge */
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.45);
+      /* Soft, deep shadow */
 
-  .event-name {
-    font-size: 34px;
-    font-weight: 900;
-    margin: 0 0 8px;
-    color: #C67509; /* Primary Gold */
-    text-transform: uppercase;
-    letter-spacing: 2.5px;
-    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5); /* Subtle shadow for depth */
-  }
+      position: relative;
+      z-index: 2;
+      /* Ensure ticket is above background image */
+    }
 
-  .valid-status {
-    font-size: 16px;
-    font-weight: 700;
-    color: #84cc16; /* Soft premium green */
-    margin-top: 5px;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-  }
+    /* Header/Title */
+    .header {
+      text-align: center;
+      margin-bottom: 30px;
+    }
 
-  hr.divider {
-    border: none;
-    height: 1px;
-    margin: 25px 0;
-    background: linear-gradient(90deg, transparent 0%, rgba(255, 215, 0, 0.4) 50%, transparent 100%);
-  }
+    .event-name {
+      font-size: 34px;
+      font-weight: 900;
+      margin: 0 0 8px;
+      color: #C67509;
+      /* Primary Gold */
+      text-transform: uppercase;
+      letter-spacing: 2.5px;
+      text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+      /* Subtle shadow for depth */
+    }
 
-  /* Ticket info grid */
-  .ticket-info {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); /* Responsive grid */
-    gap: 20px 30px;
-    margin: 30px 0;
-  }
+    .valid-status {
+      font-size: 16px;
+      font-weight: 700;
+      color: #84cc16;
+      /* Soft premium green */
+      margin-top: 5px;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
 
-  .ticket-detail {
-    margin: 0;
-    font-size: 15px;
-    color: #C0C0C0; /* Soft gray for body text */
-  }
+    hr.divider {
+      border: none;
+      height: 1px;
+      margin: 25px 0;
+      background: linear-gradient(90deg, transparent 0%, rgba(255, 215, 0, 0.4) 50%, transparent 100%);
+    }
 
-  .ticket-detail strong {
-    display: block;
-    color: #C67509; /* Gold label */
-    font-weight: 600;
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin-bottom: 3px;
-  }
+    /* Ticket info grid */
+    .ticket-info {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      /* Responsive grid */
+      gap: 20px 30px;
+      margin: 30px 0;
+    }
 
-  .detail-value {
-      color: #F7F7F7; /* Value stands out */
+    .ticket-detail {
+      margin: 0;
+      font-size: 15px;
+      color: #C0C0C0;
+      /* Soft gray for body text */
+    }
+
+    .ticket-detail strong {
+      display: block;
+      color: #C67509;
+      /* Gold label */
+      font-weight: 600;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 3px;
+    }
+
+    .detail-value {
+      color: #F7F7F7;
+      /* Value stands out */
       font-weight: 500;
       font-size: 16px;
-  }
-
-  /* QR Code Box */
-  .qr-code {
-    text-align: center;
-    margin: 30px auto;
-    width: fit-content;
-    padding: 15px;
-    background: rgba(255, 255, 255, 0.03); /* Extremely subtle light box */
-    border-radius: 12px;
-    border: 1px solid rgba(255, 215, 0, 0.15);
-  }
-  
-  /* Footer text */
-  .footer-text {
-    text-align: center;
-    margin-top: 20px;
-    padding-top: 15px;
-    border-top: 1px dashed rgba(255, 255, 255, 0.1);
-    font-size: 13px;
-    color: #888888;
-  }
-
-  .footer-text p {
-    margin: 5px 0;
-  }
-
-
-  /* --- Organizer Branding (Requested image) --- */
-  .organizer-branding {
-    text-align: center;
-    margin-top: 40px;
-    padding-top: 15px;
-    opacity: 0.8; /* Subtle for a footer */
-  }
-
-  .organizer-branding img {
-    width: 120px; /* Small size */
-    height: auto;
-    max-width: 100%;
-    margin-bottom: 5px;
-  }
-  
-  .organizer-branding p {
-    font-size: 12px;
-    color: #C67509;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 1px;
-    margin: 0;
-  }
-
-
-  /* Mobile Adjustments */
-  @media (max-width: 768px) {
-    .ticket {
-      padding: 25px;
     }
-    .event-name {
-      font-size: 28px;
+
+    /* QR Code Box */
+    .qr-code {
+      text-align: center;
+      margin: 30px auto;
+      width: fit-content;
+      padding: 15px;
+      background: rgba(255, 255, 255, 0.03);
+      /* Extremely subtle light box */
+      border-radius: 12px;
+      border: 1px solid rgba(255, 215, 0, 0.15);
     }
-  }
-</style>
+
+    /* Footer text */
+    .footer-text {
+      text-align: center;
+      margin-top: 20px;
+      padding-top: 15px;
+      border-top: 1px dashed rgba(255, 255, 255, 0.1);
+      font-size: 13px;
+      color: #888888;
+    }
+
+    .footer-text p {
+      margin: 5px 0;
+    }
+
+
+    /* --- Organizer Branding (Requested image) --- */
+    .organizer-branding {
+      text-align: center;
+      margin-top: 40px;
+      padding-top: 15px;
+      opacity: 0.8;
+      /* Subtle for a footer */
+    }
+
+    .organizer-branding img {
+      width: 120px;
+      /* Small size */
+      height: auto;
+      max-width: 100%;
+      margin-bottom: 5px;
+    }
+
+    .organizer-branding p {
+      font-size: 12px;
+      color: #C67509;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin: 0;
+    }
+
+
+    /* Mobile Adjustments */
+    @media (max-width: 768px) {
+      .ticket {
+        padding: 25px;
+      }
+
+      .event-name {
+        font-size: 28px;
+      }
+    }
+  </style>
 </head>
 
 <body>
@@ -174,56 +194,77 @@
   <div class="ticket">
 
     <div class="header">
-        <h1 class="event-name"><%= data.event.name %></h1>
-        <div class="valid-status">
-            VALID TICKET
-        </div>
+      <h1 class="event-name">
+        <%= data.event.name %>
+      </h1>
+      <div class="valid-status">
+        VERIFIED TICKET
+      </div>
     </div>
-    
+
     <hr class="divider">
 
     <div class="ticket-info">
-        <div class="ticket-detail">
-            <strong>Event Date:</strong>
-            <span class="detail-value"><%= new Date(data.event.date).toLocaleString('en-US', { dateStyle: 'full', timeStyle: 'short' }) %></span>
-        </div>
-        <div class="ticket-detail">
-            <strong>Location:</strong>
-            <span class="detail-value"><%= data.event.location %></span>
-        </div>
+      <div class="ticket-detail">
+        <strong>Ticket ID:</strong>
+        <span class="detail-value" style="font-family: monospace; color: #C67509;">
+          <%= data.invoice.invoiceId %>
+        </span>
+      </div>
+      <div class="ticket-detail">
+        <strong>Event Date:</strong>
+        <span class="detail-value">
+          <%= new Date(data.event.date).toLocaleString('en-US', { dateStyle: 'full' , timeStyle: 'short' }) %>
+        </span>
+      </div>
+      <div class="ticket-detail">
+        <strong>Location:</strong>
+        <span class="detail-value">
+          <%= data.event.location %>
+        </span>
+      </div>
 
-        <div class="ticket-detail">
-            <strong>Attendee:</strong>
-            <span class="detail-value"><%= data.user.fullName %></span>
-        </div>
-        <div class="ticket-detail">
-            <strong>Email:</strong>
-            <span class="detail-value"><%= data.user.email %></span>
-        </div>
+      <div class="ticket-detail">
+        <strong>Attendee:</strong>
+        <span class="detail-value">
+          <%= data.user.fullName %>
+        </span>
+      </div>
+      <div class="ticket-detail">
+        <strong>Email:</strong>
+        <span class="detail-value">
+          <%= data.user.email %>
+        </span>
+      </div>
 
-        <div class="ticket-detail">
-            <strong>Amount Paid:</strong>
-            <span class="detail-value"><%= data.invoice.amount %> <%= data.invoice.currency %></span>
-        </div>
-        <div class="ticket-detail">
-            <strong>Paid By:</strong>
-            <span class="detail-value"><%= data.invoice.receiptData.senderName %></span>
-        </div>
-        <div class="ticket-detail">
-            <strong>Paid Date:</strong>
-            <span class="detail-value"><%= data.invoice.receiptData.date %></span>
-        </div>
-        <div class="ticket-detail">
-            <strong>Receiver:</strong>
-            <span class="detail-value"><%= data.invoice.receiptData.receiver %></span>
-        </div>
+      <div class="ticket-detail">
+        <strong>Amount Paid:</strong>
+        <span class="detail-value">
+          <%= data.invoice.amount %>
+            <%= data.invoice.currency %>
+        </span>
+      </div>
+      <div class="ticket-detail">
+        <strong>Paid By:</strong>
+        <span class="detail-value">
+          <%= data.invoice.receiptData.senderName %>
+        </span>
+      </div>
+      <div class="ticket-detail">
+        <strong>Paid Date:</strong>
+        <span class="detail-value">
+          <%= data.invoice.receiptData.date %>
+        </span>
+      </div>
     </div>
 
     <hr class="divider">
 
     <div class="organizer-branding" style="text-align: center; margin: 40px 0;">
-      <img src="/images/RebootAdventures.png" alt="Reboot Adventures Logo" style="max-width: 100%; width: 500px; height: auto; margin: 0 auto 20px; display: block;">
-      <p style="margin: 10px 0 0; color: #666; font-size: 16px; font-weight: 500;">Event Organized by Reboot Adventures</p>
+      <img src="/images/RebootAdventures.png" alt="Reboot Adventures Logo"
+        style="max-width: 100%; width: 500px; height: auto; margin: 0 auto 20px; display: block;">
+      <p style="margin: 10px 0 0; color: #666; font-size: 16px; font-weight: 500;">Event Organized by Reboot Adventures
+      </p>
     </div>
 
     <div class="footer-text">
@@ -232,8 +273,5 @@
 
   </div>
 </body>
+
 </html>
-
-
-
-

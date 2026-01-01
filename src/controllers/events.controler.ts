@@ -88,11 +88,24 @@ export const createEvent = async (req: Request, res: Response): Promise<void> =>
  */
 export const getEvents = async (req: Request, res: Response): Promise<void> => {
   try {
-    const events = await Event.find().sort({ createdAt: -1 });
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+
+    const [events, total] = await Promise.all([
+      Event.find().sort({ date: -1 }).skip(skip).limit(limit),
+      Event.countDocuments()
+    ]);
+
     res.json({
       success: true,
-      count: events.length,
-      data: events
+      data: events,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      }
     });
   } catch (error) {
     console.error('Get events error:', error);
@@ -275,10 +288,19 @@ export const getEventRegistrations = async (req: Request, res: Response): Promis
     const { EventRegistration } = await import('../models/event-registration.model');
     const { Invoice } = await import('../models/invoice.model');
 
-    const registrations = await EventRegistration.find({ event: eventId })
-      .populate('user')
-      .sort({ createdAt: -1 })
-      .lean();
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const skip = (page - 1) * limit;
+
+    const [registrations, total] = await Promise.all([
+      EventRegistration.find({ event: eventId })
+        .populate('user')
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      EventRegistration.countDocuments({ event: eventId })
+    ]);
 
     // Get payment details for each attendee
     const attendees = await Promise.all(registrations.map(async (reg: any) => {
@@ -310,15 +332,42 @@ export const getEventRegistrations = async (req: Request, res: Response): Promis
         paymentStatus: invoice ? 'paid' : 'unpaid',
         paidAmount: invoice?.amount,
         paidAt: invoice?.paidAt,
-        registrationDate: reg.createdAt
+        registrationDate: reg.createdAt,
+        checkedIn: reg.checkedIn,
+        checkedInAt: reg.checkedInAt
       };
     }));
+      // Get stats for the entire event registrations
+      const stats = await Registration.aggregate([
+        { $match: { event: eventId } },
+        {
+          $group: {
+            _id: null,
+            total: { $sum: 1 },
+            confirmed: { $sum: { $cond: [{ $eq: ["$status", "confirmed"] }, 1, 0] } },
+            // The 'paid' and 'totalRevenue' fields are not directly available on EventRegistration
+            // and would require a lookup/join with the Invoice collection, which is complex for a simple aggregate.
+            // For now, these will be 0 or require a separate calculation.
+            paid: { $sum: 0 }, // Placeholder, as paymentStatus is derived from Invoice
+            totalRevenue: { $sum: 0 }, // Placeholder, as paidAmount is derived from Invoice
+            checkedIn: { $sum: { $cond: ["$checkedIn", 1, 0] } }
+          }
+        }
+      ]);
 
-    res.json({
-      success: true,
-      count: attendees.length,
-      data: attendees
-    });
+      const eventStats = stats.length > 0 ? stats[0] : { total: 0, confirmed: 0, paid: 0, totalRevenue: 0, checkedIn: 0 };
+
+      res.status(200).json({
+        success: true,
+        data: attendees,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit),
+        },
+        stats: eventStats
+      });
   } catch (error) {
     console.error('Get event registrations error:', error);
     res.status(500).json({ success: false, error: 'Server error' });

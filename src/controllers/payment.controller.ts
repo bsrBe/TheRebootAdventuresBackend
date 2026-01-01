@@ -162,20 +162,50 @@ export class PaymentController {
       // Import Invoice model
       const { Invoice } = await import('../models/invoice.model');
 
+      const page = parseInt(req.query.page as string) || 1;
+      const limit = parseInt(req.query.limit as string) || 10;
+      const search = req.query.search as string;
+      const skip = (page - 1) * limit;
+
       // Build the query
       const query: any = {};
       if (status) {
         query.status = status;
       }
 
+      if (search) {
+        // We'll search by invoiceId or user fullName
+        // For user search, we need to find user IDs first or use aggregate
+        const users = await (await import('../models/user.model')).User.find({
+          fullName: { $regex: search, $options: 'i' }
+        }).select('_id');
+        const userIds = users.map(u => u._id);
+
+        query.$or = [
+          { invoiceId: { $regex: search, $options: 'i' } },
+          { user: { $in: userIds } }
+        ];
+      }
+
       // Find invoices and populate user
-      const invoices = await Invoice.find(query)
-        .populate('user', 'fullName email phoneNumber')
-        .sort({ createdAt: -1 });
+      const [invoices, total] = await Promise.all([
+        Invoice.find(query)
+          .populate('user', 'fullName email phoneNumber')
+          .sort({ createdAt: -1 })
+          .skip(skip)
+          .limit(limit),
+        Invoice.countDocuments(query)
+      ]);
 
       return res.status(200).json({
         success: true,
-        data: invoices
+        data: invoices,
+        pagination: {
+          total,
+          page,
+          limit,
+          totalPages: Math.ceil(total / limit)
+        }
       });
     } catch (error: any) {
       console.error('Error getting all invoices:', error);

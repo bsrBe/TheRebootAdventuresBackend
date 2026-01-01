@@ -220,11 +220,34 @@ export const exportUsers = async (req: Request, res: Response): Promise<void> =>
 
 export const getUsers = async (req: Request, res: Response): Promise<void> => {
   try {
-    const registrations: IRegistration[] = await Registration.find().sort({ createdAt: -1 });
+    const page = parseInt(req.query.page as string) || 1;
+    const limit = parseInt(req.query.limit as string) || 10;
+    const search = req.query.search as string;
+    const skip = (page - 1) * limit;
+
+    const query: any = {};
+    if (search) {
+      query.$or = [
+        { fullName: { $regex: search, $options: 'i' } },
+        { email: { $regex: search, $options: 'i' } },
+        { phoneNumber: { $regex: search, $options: 'i' } }
+      ];
+    }
+
+    const [registrations, total] = await Promise.all([
+      Registration.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Registration.countDocuments(query)
+    ]);
+
     res.json({
       success: true,
-      count: registrations.length,
-      data: registrations
+      data: registrations,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      }
     });
   } catch (error) {
     console.error('Get users error:', error);

@@ -8,7 +8,7 @@ export interface TicketReference {
   userId: string;
   eventName: string;
   amount: number;
-  status: 'valid' | 'used';
+  status: 'valid' | 'used' | 'expired';
   createdAt: Date;
   signature: string;
 }
@@ -105,6 +105,27 @@ export class QRService {
         throw new Error('Invoice not found or not paid');
       }
 
+      // Get registration to check check-in status
+      const { EventRegistration } = await import('../models/event-registration.model');
+      let registration = await EventRegistration.findOne({
+        user: invoice.user,
+        event: invoice.event
+      });
+
+      // Fallback: If registration not found by ID (maybe old invoice), try find event by name and then registration
+      if (!registration && invoice.metadata?.eventName) {
+          const { Event } = await import('../models/events.model');
+          const event = await Event.findOne({ name: invoice.metadata.eventName });
+          if (event) {
+              registration = await EventRegistration.findOne({
+                  user: invoice.user,
+                  event: event._id
+              });
+          }
+      }
+
+      console.log(`Ticket Status Check: Ref=${reference}, CheckIn=${registration?.checkedIn || false}`);
+
       const createdAt = new Date(parseInt(timestamp));
 
       return {
@@ -114,7 +135,7 @@ export class QRService {
         userId: invoice.user.toString(),
         eventName: invoice.metadata?.eventName || 'Event',
         amount: invoice.amount,
-        status: this.determineTicketStatus(invoice),
+        status: this.determineTicketStatus(invoice, registration),
         createdAt,
         signature
       };
@@ -126,19 +147,24 @@ export class QRService {
   }
 
   /**
-   * Determine ticket status based on invoice and usage
+   * Determine ticket status based on invoice and registration
    */
-  private determineTicketStatus(invoice: any): 'valid' | 'used' {
+  private determineTicketStatus(invoice: any, registration?: any): 'valid' | 'used' | 'expired' {
     const now = new Date();
-    const eventTime = new Date(invoice.metadata?.time);
     
-    // Check if event has passed
-    if (now > eventTime) {
-      return 'used'; // Changed from 'expired' to 'used'
+    // 1. Check if user already checked in
+    if (registration?.checkedIn) {
+      return 'used';
+    }
+
+    // 2. Check if event has passed
+    if (invoice.metadata?.time) {
+        const eventTime = new Date(invoice.metadata.time);
+        if (now > eventTime) {
+          return 'expired';
+        }
     }
     
-    // Check if ticket has been used (you'd track this separately)
-    // For now, assume valid if paid and event not passed
     return 'valid';
   }
 }

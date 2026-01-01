@@ -6,6 +6,8 @@ export interface IEventRegistration extends Document {
   registrationDate: Date;
   status: 'registered' | 'payment_initiated' | 'confirmed' | 'cancelled';
   priceAtRegistration?: number;
+  checkedIn: boolean;
+  checkedInAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -33,6 +35,13 @@ const eventRegistrationSchema = new Schema<IEventRegistration>(
     },
     priceAtRegistration: {
       type: Number
+    },
+    checkedIn: {
+      type: Boolean,
+      default: false
+    },
+    checkedInAt: {
+      type: Date
     }
   },
   {

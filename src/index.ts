@@ -12,6 +12,7 @@ import { errorHandler, handleProcessErrors } from  '../src/middleware/error.midd
 import bodyParser from 'body-parser';
 import paymentRoutes from './routes/payment.routes';
 import ticketRoutes from './routes/ticket.routes';
+import memoryRoutes from './routes/memory.routes';
 dotenv.config();
 import path from 'path';
 // Initialize express app
@@ -45,11 +46,6 @@ mongoose
   .connect(MONGODB_URI)
   .then(() => {
     console.log('Connected to MongoDB');
-    
-    // Create first admin if needed
-    if (process.env.CREATE_FIRST_ADMIN === 'true') {
-      import('./scripts/createFirstAdmin').catch(console.error);
-    }
   })
   .catch((error: Error) => {
     console.error('MongoDB connection error:', error);
@@ -63,6 +59,9 @@ app.use('/api/telegram', telegramRoutes);
 app.use('/api/admin/auth', adminAuthRoutes);
 app.use('/api/admin/dashboard', dashboardRoutes);
 app.use('/api/payments', paymentRoutes);
+app.use('/api/tickets', ticketRoutes);
+app.use('/api/admin/memories', memoryRoutes);
+app.use('/api/memories', memoryRoutes);
 app.use('/ticket', ticketRoutes);
 
 // Health check endpoint

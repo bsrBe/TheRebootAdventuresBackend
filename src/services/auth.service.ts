@@ -195,8 +195,23 @@ export class AuthService {
     };
   }
 
-  static async getAllAdmins() {
-    return Admin.find().select('-passwordHash');
+  static async getAllAdmins(page = 1, limit = 10) {
+    const skip = (page - 1) * limit;
+    
+    const [admins, total] = await Promise.all([
+      Admin.find().select('-passwordHash').sort({ createdAt: -1 }).skip(skip).limit(limit),
+      Admin.countDocuments()
+    ]);
+
+    return {
+      admins,
+      pagination: {
+        total,
+        page,
+        limit,
+        totalPages: Math.ceil(total / limit)
+      }
+    };
   }
 
   private static generateTokens(admin: IAdmin) {
