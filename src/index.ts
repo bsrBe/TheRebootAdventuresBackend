@@ -55,7 +55,6 @@ mongoose
         { command: 'adventures', description: 'Browse upcoming trips' },
         { command: 'mybookings', description: 'View your bookings' },
         { command: 'myinvoices', description: 'View your invoices' },
-        { command: 'verify', description: 'Verify payment manually' },
         { command: 'gallery', description: 'View trip photos' },
         { command: 'profile', description: 'View & edit profile' },
         { command: 'support', description: 'Contact support' },

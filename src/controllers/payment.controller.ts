@@ -176,10 +176,10 @@ export class PaymentController {
       if (search) {
         // We'll search by invoiceId or user fullName
         // For user search, we need to find user IDs first or use aggregate
-        const users = await (await import('../models/user.model')).User.find({
+        const users = await Registration.find({
           fullName: { $regex: search, $options: 'i' }
         }).select('_id');
-        const userIds = users.map(u => u._id);
+        const userIds = users.map((u: { _id: any }) => u._id);
 
         query.$or = [
           { invoiceId: { $regex: search, $options: 'i' } },

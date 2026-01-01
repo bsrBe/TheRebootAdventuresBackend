@@ -132,15 +132,14 @@ export class TelegramController {
       if (message && message.reply_to_message && message.text) {
           let method = 'telebirr';
           const replyText = message.reply_to_message.text || '';
+          const transactionId = message.text.trim();
           
           if (replyText.includes('Verification method: CBE')) method = 'cbe';
           else if (replyText.includes('Verification method: BOA')) method = 'boa';
           else if (replyText.includes('Verification method: Telebirr')) method = 'telebirr';
 
-          console.log(`Detected transaction submission via reply. Method: ${method}`);
-          this.handleTransactionSubmission(chatId, message.text, userId, method).catch(err => 
-            console.error('Error in async transaction submission:', err)
-          );
+          console.log(`Detected transaction submission via reply. Transaction ID: ${transactionId}, Method: ${method}, UserId: ${userId}`);
+          await this.handleTransactionSubmission(chatId, transactionId, userId, method);
           return res.status(200).json({ success: true });
       }
 
@@ -157,10 +156,8 @@ export class TelegramController {
 
       // Handle standalone Transaction ID (relaxed: 8-30 chars, alphanumeric + common symbols)
       if (text && !text.startsWith('/') && /^[A-Z0-9&]{8,30}$/i.test(text.trim())) {
-          console.log('Detected potential standalone transaction ID.');
-          this.handleTransactionSubmission(chatId, text, userId, 'telebirr').catch(err => 
-            console.error('Error in async transaction submission:', err)
-          );
+          console.log(`Detected potential standalone transaction ID: ${text.trim()}, UserId: ${userId}`);
+          await this.handleTransactionSubmission(chatId, text.trim(), userId, 'telebirr');
           return res.status(200).json({ success: true });
       }
 
@@ -257,9 +254,6 @@ export class TelegramController {
       case '/mybookings':
         await this.handleMyBookings(chatId, userId);
         break;
-      case '/verify':
-        await this.handleVerify(chatId, args[0], userId);
-        break;
       case '/profile':
         await this.handleProfile(chatId, userId);
         break;
@@ -278,27 +272,6 @@ export class TelegramController {
       default:
         await this.telegramService.sendMessage(chatId, '❌ Unknown command. Type /help for available commands.');
     }
-  };
-
-  /**
-   * Handle /verify command
-   */
-  private handleVerify = async (chatId: string | number, transactionId?: string, userId?: number) => {
-    if (!transactionId) {
-      // Use ForceReply so the user's next message is treated as a reply to this one
-      return this.telegramService.sendMessage(
-        chatId, 
-        '💡 Please reply to this message with your <b>Transaction ID</b>.', 
-        { 
-          reply_markup: { 
-            force_reply: true,
-            input_field_placeholder: "Enter Transaction ID..." 
-          } 
-        }
-      );
-    }
-    // Defaulting to telebirr for direct command, or we could parse args[1]
-    await this.handleTransactionSubmission(chatId, transactionId, userId, 'telebirr');
   };
 
   /**
@@ -544,7 +517,6 @@ export class TelegramController {
       '*/adventures* - Browse upcoming trips\n' +
       '*/mybookings* - View your bookings\n' +
       '*/myinvoices* - View your invoices\n' +
-      '*/verify* - Verify a payment manually\n' +
       '*/gallery* - View trip photos\n' +
       '*/profile* - View & edit your profile\n' +
       '*/support* - Contact support\n' +
