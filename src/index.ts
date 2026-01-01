@@ -55,16 +55,13 @@ mongoose
         { command: 'adventures', description: 'Browse upcoming trips' },
         { command: 'mybookings', description: 'View your bookings' },
         { command: 'myinvoices', description: 'View your invoices' },
+        { command: 'verify', description: 'Verify payment manually' },
         { command: 'gallery', description: 'View trip photos' },
         { command: 'profile', description: 'View & edit profile' },
         { command: 'support', description: 'Contact support' },
         { command: 'help', description: 'Show help message' }
       ]);
-      
-      // Set persistent Menu Button
-      await telegramService.setChatMenuButton(undefined, 'web_app', process.env.FRONTEND_URL);
-      
-      console.log('Telegram commands and menu initialized');
+      console.log('Telegram commands initialized');
     }).catch(err => console.error('Failed to init Telegram commands:', err));
   })
   .catch((error: Error) => {
@@ -113,7 +110,7 @@ handleProcessErrors(server);
 
 // Start the server
 const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+const httpServer = server.listen(PORT, () => {
   console.log(`Server running in ${process.env.NODE_ENV || 'development'} mode on port ${PORT}`);
 });
 

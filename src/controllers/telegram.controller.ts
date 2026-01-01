@@ -204,21 +204,21 @@ export class TelegramController {
         return this.telegramService.sendMessage(chatId, '❌ User not found. Please register first.');
       }
 
+      // 1. Send immediate feedback
+      await this.telegramService.sendMessage(chatId, `🔄 <b>Verifying ${method.toUpperCase()} transaction...</b>\n\nPlease wait while we confirm your payment.`);
+
+      // 2. Perform verification
       const result = await paymentService.verifyPayment(transactionId, user._id.toString(), method, eventName);
       
       // If invoice exists in result, the service already sent the QR code message
-      // Only send additional message if no invoice was returned (shouldn't happen but safety check)
       if (result.success && result.invoice) {
-        // Service already sent QR code with message, no need to send duplicate
         return;
       } else if (result.success) {
-        // Success but no invoice (shouldn't normally happen)
         await this.telegramService.sendMessage(
           chatId, 
           `✅ <b>Payment Verified!</b>\n\n${result.message}\n\nYour booking has been confirmed.`
         );
       } else {
-        // Verification failed
         await this.telegramService.sendMessage(
           chatId, 
           `❌ <b>Verification Failed</b>\n\n${result.message}\n\nPlease check your transaction ID and try again.`
@@ -244,11 +244,49 @@ export class TelegramController {
         return this.telegramService.sendMessage(chatId, '❌ User not found. Please register first.');
       }
 
-      // For now, just acknowledge the photo upload
-      // Full implementation would require event context and memory creation
+      // 1. Find the most recent confirmed event the user attended
+      const { EventRegistration } = await import('../models/event-registration.model');
+      
+      // Heuristic: Confirmed within the last 48 hours, or simply the most recent confirmed
+      const recentAttendance = await EventRegistration.findOne({
+        user: user._id,
+        status: { $in: ['confirmed'] }
+      }).populate('event').sort({ updatedAt: -1 });
+
+      if (!recentAttendance) {
+        return this.telegramService.sendMessage(
+          chatId, 
+          "📸 That's a great photo! Once you attend one of our adventures, you can share memories here to be featured on our website!"
+        );
+      }
+
+      const event = recentAttendance.event as any;
+      if (!event) return;
+
+      // 2. Get file URL from Telegram
+      const { axios } = await import('axios').then(m => ({ axios: m.default }));
+      const fileResponse = await axios.get(`https://api.telegram.org/bot${process.env.TELEGRAM_BOT_TOKEN}/getFile?file_id=${fileId}`);
+      const filePath = (fileResponse.data as any).result.file_path;
+      const photoUrl = `https://api.telegram.org/file/bot${process.env.TELEGRAM_BOT_TOKEN}/${filePath}`;
+
+      // 3. Save as a Memory
+      const { Memory } = await import('../models/memory.model');
+      
+      const memory = new Memory({
+        user: user._id,
+        event: event._id,
+        photoUrl: photoUrl,
+        caption: caption,
+        telegramFileId: fileId,
+        isApproved: false
+      });
+
+      await memory.save();
+
+      // 4. Confirm to user
       await this.telegramService.sendMessage(
         chatId, 
-        '📸 <b>Photo Received!</b>\n\nThank you for sharing your memory. Photos are reviewed before being added to the gallery.'
+        `🖼️ <b>Memory Captured!</b>\n\nI've sent your photo from <b>${event.name}</b> to our team for review. If approved, it will be featured in our trip gallery! ✨`
       );
     } catch (error: any) {
       console.error('Error in handlePhotoUpload:', error);

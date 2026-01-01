@@ -1,6 +1,6 @@
 import { Request, Response } from 'express';
 import { Event } from '../models/events.model';
-import { Error as MongooseError } from 'mongoose';
+import mongoose, { Error as MongooseError } from 'mongoose';
 import { Registration } from '../models/user.model';
 import { TelegramService } from '../services/telegram.service';
 
@@ -344,11 +344,11 @@ export const getEventRegistrations = async (req: Request, res: Response): Promis
 
       // Aggregate stats from EventRegistration
       const stats = await EventRegistration.aggregate([
-        { $match: { event: eventId } },
+        { $match: { event: new mongoose.Types.ObjectId(eventId) } },
         {
           $lookup: {
             from: 'invoices',
-            let: { userId: '$user', eventId: eventId, eventName: eventName },
+            let: { userId: '$user', eventId: new mongoose.Types.ObjectId(eventId), eventName: eventName },
             pipeline: [
               {
                 $match: {
