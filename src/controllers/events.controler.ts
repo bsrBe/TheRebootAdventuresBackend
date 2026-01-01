@@ -338,19 +338,48 @@ export const getEventRegistrations = async (req: Request, res: Response): Promis
       };
     }));
       // Get stats for the entire event registrations
-      const stats = await Registration.aggregate([
+      // First, get event name for matching invoices by metadata
+      const event = await Event.findById(eventId);
+      const eventName = event?.name;
+
+      // Aggregate stats from EventRegistration
+      const stats = await EventRegistration.aggregate([
         { $match: { event: eventId } },
+        {
+          $lookup: {
+            from: 'invoices',
+            let: { userId: '$user', eventId: eventId, eventName: eventName },
+            pipeline: [
+              {
+                $match: {
+                  $expr: {
+                    $and: [
+                      { $eq: ['$user', '$$userId'] },
+                      { $eq: ['$status', 'paid'] },
+                      {
+                        $or: [
+                          { $eq: ['$event', '$$eventId'] },
+                          { $eq: ['$metadata.eventName', '$$eventName'] }
+                        ]
+                      }
+                    ]
+                  }
+                }
+              },
+              { $sort: { paidAt: -1 } },
+              { $limit: 1 }
+            ],
+            as: 'invoice'
+          }
+        },
         {
           $group: {
             _id: null,
             total: { $sum: 1 },
-            confirmed: { $sum: { $cond: [{ $eq: ["$status", "confirmed"] }, 1, 0] } },
-            // The 'paid' and 'totalRevenue' fields are not directly available on EventRegistration
-            // and would require a lookup/join with the Invoice collection, which is complex for a simple aggregate.
-            // For now, these will be 0 or require a separate calculation.
-            paid: { $sum: 0 }, // Placeholder, as paymentStatus is derived from Invoice
-            totalRevenue: { $sum: 0 }, // Placeholder, as paidAmount is derived from Invoice
-            checkedIn: { $sum: { $cond: ["$checkedIn", 1, 0] } }
+            confirmed: { $sum: { $cond: [{ $eq: ['$status', 'confirmed'] }, 1, 0] } },
+            paid: { $sum: { $cond: [{ $gt: [{ $size: '$invoice' }, 0] }, 1, 0] } },
+            totalRevenue: { $sum: { $ifNull: [{ $arrayElemAt: ['$invoice.amount', 0] }, 0] } },
+            checkedIn: { $sum: { $cond: ['$checkedIn', 1, 0] } }
           }
         }
       ]);
