@@ -1,7 +1,7 @@
 import { Request, Response } from 'express';
 import { TelegramService } from '../services/telegram.service';
 import { Registration } from '../models/user.model';
-import { paymentService } from '../services/payment.service';
+import { PaymentService, paymentService } from '../services/payment.service';
 
 export class TelegramController {
   private telegramService: TelegramService;
@@ -165,8 +165,9 @@ export class TelegramController {
 
       // Handle standalone Transaction ID (relaxed: 8-30 chars, alphanumeric + common symbols)
       if (text && !text.startsWith('/') && /^[A-Z0-9&]{8,30}$/i.test(text.trim())) {
-          console.log(`Detected potential standalone transaction ID: ${text.trim()}, UserId: ${userId}`);
-          this.handleTransactionSubmission(chatId, text.trim(), userId, 'telebirr').catch(err => 
+          const detectedMethod = PaymentService.detectPaymentMethod(text.trim());
+          console.log(`Detected potential standalone transaction ID: ${text.trim()}, Auto-detected method: ${detectedMethod}, UserId: ${userId}`);
+          this.handleTransactionSubmission(chatId, text.trim(), userId, detectedMethod).catch(err => 
             console.error('Error in async transaction submission:', err)
           );
           return res.status(200).json({ success: true });

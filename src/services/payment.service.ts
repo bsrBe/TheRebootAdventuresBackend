@@ -16,6 +16,19 @@ export class PaymentService {
   }
 
   /**
+   * Detect payment method based on transaction ID prefix
+   */
+  public static detectPaymentMethod(transactionId: string): string {
+    const tid = transactionId.trim().toUpperCase();
+    if (tid.startsWith('FT')) {
+      return 'cbe';
+    } else if (tid.startsWith('CFT') || tid.startsWith('DFT')) {
+      return 'boa';
+    }
+    return 'telebirr';
+  }
+
+  /**
    * Initialize a payment (Manual Telebirr Flow)
    */
   async initializePayment(
