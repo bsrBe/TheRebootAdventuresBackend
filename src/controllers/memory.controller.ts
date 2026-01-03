@@ -1,7 +1,14 @@
 import { Request, Response } from 'express';
 import { Memory } from '../models/memory.model';
+import { TelegramService } from '../services/telegram.service';
 
 export class MemoryController {
+  private telegramService: TelegramService;
+
+  constructor() {
+    this.telegramService = new TelegramService();
+  }
+
   /**
    * Get all memories for admin
    */
@@ -27,9 +34,20 @@ export class MemoryController {
         Memory.countDocuments(query)
       ]);
 
+      // Transform photoUrl to use our proxy if it's a telegram link or if we have fileId
+      const memoriesWithProxy = memories.map(m => {
+        const obj = m.toObject();
+        if (m.telegramFileId) {
+          // Point to our proxy endpoint
+          const baseUrl = process.env.BACKEND_URL || `${req.protocol}://${req.get('host')}`;
+          obj.photoUrl = `${baseUrl}/api/memories/${m._id}/photo`;
+        }
+        return obj;
+      });
+
       return res.status(200).json({
         success: true,
-        data: memories,
+        data: memoriesWithProxy,
         pagination: {
           total,
           page,
@@ -40,6 +58,33 @@ export class MemoryController {
     } catch (error: any) {
       console.error('Get memories error:', error.message);
       return res.status(500).json({ success: false, message: 'Failed to fetch memories' });
+    }
+  }
+
+  /**
+   * Proxy/Redirect to a fresh telegram photo URL
+   */
+  public async getMemoryPhoto(req: Request, res: Response) {
+    try {
+      const { id } = req.params;
+      const memory = await Memory.findById(id);
+
+      if (!memory || !memory.telegramFileId) {
+        return res.status(404).send('Photo not found');
+      }
+
+      // Refresh the URL from Telegram using the service
+      const freshUrl = await this.telegramService.getFileUrl(memory.telegramFileId);
+
+      if (!freshUrl) {
+        return res.status(500).send('Failed to refresh photo URL');
+      }
+
+      // Redirect to the temporary but fresh Telegram URL
+      return res.redirect(freshUrl);
+    } catch (error: any) {
+      console.error('Proxy photo error:', error.message);
+      return res.status(500).send('Internal server error');
     }
   }
 
@@ -108,9 +153,20 @@ export class MemoryController {
         Memory.countDocuments({ isApproved: true })
       ]);
 
+      // Transform photoUrl to use our proxy if it's a telegram link or if we have fileId
+      const memoriesWithProxy = memories.map(m => {
+        const obj = m.toObject();
+        if (m.telegramFileId) {
+          // Point to our proxy endpoint
+          const baseUrl = process.env.BACKEND_URL || `${req.protocol}://${req.get('host')}`;
+          obj.photoUrl = `${baseUrl}/api/memories/${m._id}/photo`;
+        }
+        return obj;
+      });
+
       return res.status(200).json({
         success: true,
-        data: memories,
+        data: memoriesWithProxy,
         pagination: {
           total,
           page,

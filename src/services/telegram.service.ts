@@ -345,4 +345,18 @@ See you there! 🚀
           return false;
       }
   }
+
+  /**
+   * Get a fresh, temporary file URL from Telegram
+   */
+  async getFileUrl(fileId: string): Promise<string | null> {
+    try {
+      const response = await axios.get(`${this.botApiUrl}/getFile?file_id=${fileId}`);
+      const filePath = (response.data as any).result.file_path;
+      return `https://api.telegram.org/file/bot${this.botToken}/${filePath}`;
+    } catch (error: any) {
+      console.error('Error fetching file URL from Telegram:', error.message);
+      return null;
+    }
+  }
 }
