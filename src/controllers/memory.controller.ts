@@ -12,7 +12,7 @@ export class MemoryController {
   /**
    * Get all memories for admin
    */
-  public async getMemories(req: Request, res: Response) {
+  public getMemories = async (req: Request, res: Response) => {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 10;
@@ -64,7 +64,7 @@ export class MemoryController {
   /**
    * Proxy/Redirect to a fresh telegram photo URL
    */
-  public async getMemoryPhoto(req: Request, res: Response) {
+  public getMemoryPhoto = async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const memory = await Memory.findById(id);
@@ -91,7 +91,7 @@ export class MemoryController {
   /**
    * Approve a memory
    */
-  public async approveMemory(req: Request, res: Response) {
+  public approveMemory = async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const { isApproved } = req.body;
@@ -116,7 +116,7 @@ export class MemoryController {
   /**
    * Delete a memory
    */
-  public async deleteMemory(req: Request, res: Response) {
+  public deleteMemory = async (req: Request, res: Response) => {
     try {
       const { id } = req.params;
       const memory = await Memory.findByIdAndDelete(id);
@@ -138,7 +138,7 @@ export class MemoryController {
   /**
    * Get approved memories for public gallery
    */
-  public async getPublicMemories(req: Request, res: Response) {
+  public getPublicMemories = async (req: Request, res: Response) => {
     try {
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 20;
