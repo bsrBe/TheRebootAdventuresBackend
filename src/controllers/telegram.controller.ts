@@ -2,6 +2,8 @@ import { Request, Response } from 'express';
 import { TelegramService } from '../services/telegram.service';
 import { Registration } from '../models/user.model';
 import { PaymentService, paymentService } from '../services/payment.service';
+import fs from 'fs';
+import path from 'path';
 
 export class TelegramController {
   private telegramService: TelegramService;
@@ -332,6 +334,83 @@ export class TelegramController {
   };
 
   /**
+   * Handle /start command
+   */
+  private handleStart = async (chatId: string | number, userId?: number) => {
+    // Update user's telegram data if they exist, but don't block the welcome message
+    if (userId) {
+       await Registration.findOneAndUpdate(
+        { 'telegramData.id': userId },
+        {
+          $set: {
+            'telegramData.chatId': chatId,
+            'telegramData.last_activity': new Date(),
+            'telegramData.is_subscribed': true
+          }
+        },
+        { new: true }
+      ).catch(err => console.error('Error updating user on start:', err));
+    }
+
+    // Send welcome message with Web App button
+    const welcomeMessage = 
+      '🌟 <b>WELCOME TO REBOOT ADVENTURES</b> 🌟\n\n' +
+      'Step into a world of excitement and nature! 🌿🏇\n\n' +
+      'We curate premium horseback riding experiences and community adventures designed to help you disconnect and reboot.\n\n' +
+      '👇 <b>Start your journey below:</b>';
+    
+    const frontendUrl = process.env.FRONTEND_URL;
+    const assetsPath = path.join(__dirname, '../../../Frontend/src/assets');
+    const imagePath = path.join(assetsPath, 'RebootWelcome.jpg');
+
+    try {
+      if (fs.existsSync(imagePath)) {
+        const imageBuffer = fs.readFileSync(imagePath);
+        await this.telegramService.sendPhoto(chatId, imageBuffer, welcomeMessage, {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: '🚀 Launch Experience',
+                  web_app: { url: frontendUrl }
+                }
+              ]
+            ]
+          }
+        });
+      } else {
+        console.warn('Welcome image not found at:', imagePath);
+        await this.telegramService.sendMessage(chatId, welcomeMessage, {
+          reply_markup: {
+            inline_keyboard: [
+              [
+                {
+                  text: '🚀 Launch Experience',
+                  web_app: { url: frontendUrl }
+                }
+              ]
+            ]
+          }
+        });
+      }
+    } catch (error) {
+      console.error('Error sending welcome photo:', error);
+      await this.telegramService.sendMessage(chatId, welcomeMessage, {
+        reply_markup: {
+          inline_keyboard: [
+            [
+              {
+                text: '🚀 Launch Experience',
+                web_app: { url: frontendUrl }
+              }
+            ]
+          ]
+        }
+      });
+    }
+  };
+
+  /**
    * Handle /adventures command
    */
   private handleAdventures = async (chatId: string | number) => {
@@ -340,17 +419,23 @@ export class TelegramController {
       const events = await Event.find({ isActive: true }).sort({ date: 1 }).limit(5);
 
       if (events.length === 0) {
-        return this.telegramService.sendMessage(chatId, '📭 No upcoming adventures at the moment. Stay tuned!');
+        return this.telegramService.sendMessage(chatId, '📭 <b>No Upcoming Adventures</b>\n\nCheck back soon for new trips! 🔄');
       }
 
-      const message = '🌟 <b>Upcoming Adventures</b>\n\n' + 
-        events.map(e => `📍 <b>${e.name}</b>\n📅 ${new Date(e.date).toLocaleDateString()}\n💰 ${e.price} ETB\n`).join('\n') +
-        '\nTap the button below to book your spot!';
+      const message = '🏔️ <b>UPCOMING ADVENTURES</b>\n' +
+        '━━━━━━━━━━━━━━━━━━━━\n\n' + 
+        events.map(e => 
+          `📍 <b>${e.name.toUpperCase()}</b>\n` +
+          `📅 ${new Date(e.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}\n` +
+          `💰 ${e.price} ETB\n` +
+          `<i>${e.description ? e.description.substring(0, 50) + '...' : 'Join us for an amazing time!'}</i>`
+        ).join('\n\n━━━━━━━━━━━━━━━━━━━━\n\n') +
+        '\n\n👇 <b>Tap below to secure your spot!</b>';
 
       await this.telegramService.sendMessage(chatId, message, {
         reply_markup: {
           inline_keyboard: [
-            [{ text: '🌐 Browse & Book', web_app: { url: `${process.env.FRONTEND_URL}/events` } }]
+            [{ text: '🎫 Book Adventure', web_app: { url: `${process.env.FRONTEND_URL}/events` } }]
           ]
         }
       });
@@ -372,14 +457,17 @@ export class TelegramController {
       const bookings = await EventRegistration.find({ user: user._id }).populate('event').sort({ createdAt: -1 });
 
       if (bookings.length === 0) {
-        return this.telegramService.sendMessage(chatId, "📅 You haven't booked any adventures yet! Type /adventures to see what's coming up.");
+        return this.telegramService.sendMessage(chatId, "📅 <b>No Bookings Yet</b>\n\nYou haven't joined any adventures yet. Type /adventures to see what's coming up!");
       }
 
-      const message = '📋 <b>Your Bookings</b>\n\n' + 
+      const message = '🎟️ <b>YOUR BOOKINGS</b>\n' +
+        '━━━━━━━━━━━━━━━━━━━━\n\n' + 
         bookings.map((b: any) => {
             const statusEmoji = b.status === 'confirmed' ? '✅' : '⏳';
-            return `🏇 <b>${b.event?.name}</b>\nStatus: ${statusEmoji} ${b.status.toUpperCase()}`;
-        }).join('\n\n');
+            return `🏇 <b>${b.event?.name}</b>\n` +
+                   `📅 ${new Date(b.event?.date).toLocaleDateString()}\n` +
+                   `Status: ${statusEmoji} <b>${b.status.toUpperCase()}</b>`;
+        }).join('\n\n━━━━━━━━━━━━━━━━━━━━\n\n');
 
       await this.telegramService.sendMessage(chatId, message);
     } catch (error) {
@@ -396,11 +484,13 @@ export class TelegramController {
       const user = await Registration.findOne({ 'telegramData.id': userId });
       if (!user) return this.telegramService.sendMessage(chatId, '❌ Profile not found.');
 
-      const message = `👤 <b>Your Profile</b>\n\n` +
-        `Name: <b>${user.fullName}</b>\n` +
-        `Phone: <b>${user.phoneNumber || 'N/A'}</b>\n` +
-        `Experience: <b>${user.horseRidingExperience || 'Beginner'}</b>\n` +
-        `Age: <b>${user.age || 'N/A'}</b>`;
+      const message = `👤 <b>ADVENTURER PROFILE</b>\n` +
+        '━━━━━━━━━━━━━━━━━━━━\n\n' +
+        `<b>Name:</b> ${user.fullName}\n` +
+        `<b>Phone:</b> ${user.phoneNumber || 'N/A'}\n` +
+        `<b>Level:</b> ${user.horseRidingExperience || 'Beginner'}\n` +
+        `<b>Age:</b> ${user.age || 'N/A'}\n\n` +
+        '━━━━━━━━━━━━━━━━━━━━';
 
       await this.telegramService.sendMessage(chatId, message, {
         reply_markup: {
@@ -416,21 +506,15 @@ export class TelegramController {
    * Handle /gallery command
    */
   private handleGallery = async (chatId: string | number) => {
-    const message = '🖼️ <b>Reboot Adventures Gallery</b>\n\nRelive the best moments from our community trips! Check out our photo gallery below.';
+    const message = '📸 <b>COMMUNITY GALLERY</b>\n\n' +
+    'Relive the magic! ✨ See the smiles, the trails, and the unforgettable moments from our community.\n\n' +
+    '👇 <b>View the collection:</b>';
+    
     await this.telegramService.sendMessage(chatId, message, {
       reply_markup: {
-        inline_keyboard: [[{ text: '📸 Open Gallery', web_app: { url: `${process.env.FRONTEND_URL}/gallery` } }]]
+        inline_keyboard: [[{ text: '🌄 Open Gallery', web_app: { url: `${process.env.FRONTEND_URL}/gallery` } }]]
       }
     });
-  };
-
-  /**
-   * Send support message
-   */
-  private sendSupportMessage = async (chatId: string | number) => {
-    const adminUsername = process.env['Admin_User-Name'] || '@BsreAbrham';
-    const message = `🤝 <b>Need Help?</b>\n\nOur team is here to assist you with bookings, payments, or any questions.\n\n📱 <b>Support:</b> ${adminUsername}`;
-    await this.telegramService.sendMessage(chatId, message);
   };
 
   /**
@@ -457,46 +541,6 @@ export class TelegramController {
   };
 
   /**
-   * Handle /start command
-   */
-  private handleStart = async (chatId: string | number, userId?: number) => {
-    // Update user's telegram data if they exist, but don't block the welcome message
-    if (userId) {
-       await Registration.findOneAndUpdate(
-        { 'telegramData.id': userId },
-        {
-          $set: {
-            'telegramData.chatId': chatId,
-            'telegramData.last_activity': new Date(),
-            'telegramData.is_subscribed': true
-          }
-        },
-        { new: true }
-      ).catch(err => console.error('Error updating user on start:', err));
-    }
-
-    // Send welcome message with Web App button
-    const welcomeMessage = 
-      '🌟 <b>Welcome to Reboot Adventures!</b>\n\n' +
-      'Join us for exciting horseback riding adventures and create unforgettable memories.\n\n' +
-      'Use the button below to browse events, book your spot, and manage your profile.';
-    
-    const frontendUrl = process.env.FRONTEND_URL;
-    await this.telegramService.sendMessage(chatId, welcomeMessage, {
-      reply_markup: {
-        inline_keyboard: [
-          [
-            {
-              text: '🌐 Open Web App',
-              web_app: { url: frontendUrl }
-            }
-          ]
-        ]
-      }
-    });
-  };
-
-  /**
    * Handle /myinvoices command
    */
   private handleMyInvoices = async (chatId: string | number, userId?: number) => {
@@ -515,7 +559,7 @@ export class TelegramController {
     const invoices = await Invoice.find({ user: user._id }).sort({ createdAt: -1 });
     
     if (invoices.length === 0) {
-      return this.telegramService.sendMessage(chatId, 'You have no invoices yet.');
+      return this.telegramService.sendMessage(chatId, '📭 <b>No Invoices Found</b>\n\nYou have no pending or past invoices.');
     }
 
     // Send each invoice as a separate message
@@ -565,22 +609,51 @@ export class TelegramController {
   };
 
   /**
+   * Send support message
+   */
+  private sendSupportMessage = async (chatId: string | number) => {
+    const adminUsername = process.env['Admin_User-Name'] || '@BsreAbrham';
+    const message = `💬 <b>NEED ASSISTANCE?</b>\n\n` +
+    `Our team is ready to help you with bookings, payments, or any inquiries.\n\n` +
+    `👤 <b>Support Contact:</b> ${adminUsername}\n` +
+    `🕒 <b>Hours:</b> 9:00 AM - 6:00 PM`;
+    
+    await this.telegramService.sendMessage(chatId, message);
+  };
+
+  /**
    * Send help message
    */
   private sendHelpMessage = async (chatId: string | number) => {
     const helpText = `
-🤖 *Bot Commands* \n\n` +
-      '*/start* - Start the bot & register\n' +
-      '*/adventures* - Browse upcoming trips\n' +
-      '*/mybookings* - View your bookings\n' +
-      '*/myinvoices* - View your invoices\n' +
-      '*/gallery* - View trip photos\n' +
-      '*/profile* - View & edit your profile\n' +
-      '*/support* - Contact support\n' +
-      '*/help* - Show this message\n\n' +
-      'For additional help, contact our support team.';
+🤖 <b>REBOOT BOT COMMANDS</b>
+━━━━━━━━━━━━━━━━━━━━
 
-    await this.telegramService.sendMessage(chatId, helpText, { parse_mode: 'Markdown' });
+🚀 <b>/start</b>
+Start the bot & open the app
+
+🏔️ <b>/adventures</b>
+Browse our upcoming trips
+
+🎟️ <b>/mybookings</b>
+View your scheduled events
+
+🧾 <b>/myinvoices</b>
+Track your payments
+
+📸 <b>/gallery</b>
+See photos from past trips
+
+👤 <b>/profile</b>
+View & edit your details
+
+💬 <b>/support</b>
+Get in touch with us
+
+━━━━━━━━━━━━━━━━━━━━
+<i>Select a command to proceed</i>`;
+
+    await this.telegramService.sendMessage(chatId, helpText, { parse_mode: 'HTML' });
   };
 
   /**
@@ -590,22 +663,26 @@ export class TelegramController {
     const statusEmoji = invoice.status === 'paid' ? '✅' : '⏳';
     const statusText = invoice.status === 'paid' 
       ? `Paid on ${new Date(invoice.paidAt!).toLocaleDateString()}` 
-      : 'Pending payment';
+      : 'Pending Payment';
 
     const eventName = invoice.metadata?.eventName || 'Event';
-    const place = invoice.metadata?.place || 'Unknown Location';
-    const time = invoice.metadata?.time ? new Date(invoice.metadata.time).toLocaleString() : 'Unknown Time';
+    const place = invoice.metadata?.place || 'TBA';
+    const time = invoice.metadata?.time ? new Date(invoice.metadata.time).toLocaleString() : 'TBA';
 
     const message = `
-📋 *Invoice #${invoice.invoiceId}* ${statusEmoji}\n\n` +
-      `🔹 *Event:* ${eventName}\n` +
-      `💵 *Amount:* ${invoice.amount} ETB\n` +
-      `📍 *Location:* ${place}\n` +
-      `📅 *Date & Time:* ${time}\n` +
-      `📌 *Status:* ${statusText}\n\n`;
+🧾 <b>INVOICE #${invoice.invoiceId}</b> ${statusEmoji}
+━━━━━━━━━━━━━━━━━━━━
+
+📍 <b>Event:</b> ${eventName}
+💰 <b>Amount:</b> ${invoice.amount} ETB
+🗺️ <b>Location:</b> ${place}
+📅 <b>Date:</b> ${time}
+
+<b>Status:</b> ${statusText}
+━━━━━━━━━━━━━━━━━━━━`;
 
     const options: any = {
-      parse_mode: 'Markdown',
+      parse_mode: 'HTML',
     };
 
     if (invoice.status !== 'paid') {
