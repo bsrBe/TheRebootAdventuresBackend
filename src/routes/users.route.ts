@@ -14,12 +14,13 @@ const router = Router();
 
 // Public routes (registration only)
 router.post('/', registerUser);
+router.get('/telegram/:id', getUserByTelegramId);
 
 // Admin-protected routes
 router.use(authenticateAdmin);
 
 router.get('/', getUsers);
-router.get('/telegram/:id', getUserByTelegramId);
+
 router.get('/export', exportUsers);
 
 router.put('/:id', requireRole(AdminRole.SUPER_ADMIN, AdminRole.ADMIN), updateUser);
