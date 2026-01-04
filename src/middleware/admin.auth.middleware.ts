@@ -77,7 +77,11 @@ export const requireRole = (...roles: string[]) => {
   return (req: Request, res: Response, next: NextFunction) => {
     const user = req.user;
     if (!user || !isAdmin(user) || !roles.includes(user.role)) {
-      return res.status(403).json({ message: 'Insufficient permissions' });
+      const userRole = user && isAdmin(user) ? user.role : 'unknown';
+      return res.status(403).json({ 
+        success: false,
+        message: `Action not supported for role: ${userRole}` 
+      });
     }
     next();
   };

@@ -3,6 +3,8 @@ import { body, param } from 'express-validator';
 import { paymentController } from '../controllers/payment.controller';
 import { validate } from '../middleware/validation.middleware';
 import { authenticate } from '../middleware/auth.middleware';
+import { authenticateAdmin, requireRole } from '../middleware/admin.auth.middleware';
+import { AdminRole } from '../models/admin.model';
 
 const router = Router();
 
@@ -66,36 +68,35 @@ router.get(
   paymentController.getInvoiceById
 );
 
+// Admin-only routes below this point
+router.use(authenticateAdmin);
+
 /**
  * @route GET /api/payments/invoices
  * @desc Get all invoices (admin only)
- * @access Private (Admin only)
  */
 router.get(
   '/invoices',
-  authenticate,
   paymentController.getAllInvoices
 );
 
 /**
  * @route POST /api/payments/debug-scraping
  * @desc Debug Telebirr transaction scraping (development only)
- * @access Private
  */
 router.post(
   '/debug-scraping',
-  authenticate,
+  requireRole(AdminRole.SUPER_ADMIN, AdminRole.ADMIN),
   paymentController.debugTelebirrScraping
 );
 
 /**
  * @route POST /api/payments/verify
  * @desc Verify payment manually via transaction ID
- * @access Private
  */
 router.post(
   '/verify',
-  authenticate,
+  requireRole(AdminRole.SUPER_ADMIN, AdminRole.ADMIN),
   validate([
     body('transactionId').trim().notEmpty().withMessage('Transaction ID is required'),
     body('userId').isMongoId().withMessage('Valid user ID is required')
@@ -103,17 +104,22 @@ router.post(
   paymentController.verifyPayment
 );
 
-// Route to bulk initialize payments (Admin only)
+/**
+ * @route POST /api/payments/bulk-initialize
+ * @desc Bulk initialize payments
+ */
 router.post(
   '/bulk-initialize',
-  authenticate,
-  // Add admin check middleware here if available, e.g. requireAdmin
+  requireRole(AdminRole.SUPER_ADMIN, AdminRole.ADMIN),
   paymentController.bulkInitializePayment
 );
 
+/**
+ * @route GET /api/payments/export
+ * @desc Export invoices
+ */
 router.get(
   '/export',
-  authenticate,
   paymentController.exportInvoices
 );
 

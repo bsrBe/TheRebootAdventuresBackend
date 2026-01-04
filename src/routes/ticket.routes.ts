@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { TicketController } from '../controllers/ticket.controller';
-import { authenticateAdmin } from '../middleware/admin.auth.middleware';
+import { authenticateAdmin, requireRole } from '../middleware/admin.auth.middleware';
+import { AdminRole } from '../models/admin.model';
 
 const router = Router();
 const ticketController = new TicketController();
@@ -20,13 +21,13 @@ router.use(['/:reference/use', '/checkin/:registrationId', '/:reference/status']
  * @desc Mark ticket as used (check-in)
  * @access Private (event organizers only)
  */
-router.post('/:reference/use', ticketController.markTicketUsed);
+router.post('/:reference/use', requireRole(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.SUPPORT), ticketController.markTicketUsed);
 
 /**
  * @route POST /ticket/checkin/:registrationId
  * @desc Mark attendee as checked in manually
  */
-router.post('/checkin/:registrationId', ticketController.checkInManual);
+router.post('/checkin/:registrationId', requireRole(AdminRole.SUPER_ADMIN, AdminRole.ADMIN, AdminRole.SUPPORT), ticketController.checkInManual);
 
 /**
  * @route GET /ticket/:reference/status
