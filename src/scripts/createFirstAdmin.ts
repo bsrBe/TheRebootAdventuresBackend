@@ -5,8 +5,6 @@ import dotenv from 'dotenv';
 
 dotenv.config();
 
-// const MONGODB_URI = 'mongodb+srv://BisratAbrham:142536bsr@cluster0.hjgnw.mongodb.net/Reboot_Adventures'
-const MONGODB_URI = 'mongodb+srv://BisratAbrham:142536bsr@cluster0.hjgnw.mongodb.net/Reboot_Adventures'
 const ADMIN_EMAIL = 'henos@gmail.com';
 const ADMIN_PASSWORD = 'admin123';
 const ADMIN_FIRST_NAME = 'Henos';
