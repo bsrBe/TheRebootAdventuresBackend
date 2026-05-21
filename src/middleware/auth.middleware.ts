@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import jwt from 'jsonwebtoken';
+
+import { Admin, Registration } from '../models';
 import { IRegistration } from '../interfaces/user.interface';
 import { IAdmin } from '../models/admin.model';
 
@@ -53,8 +55,6 @@ export const authenticate = async (
     const decoded = jwt.verify(token, process.env.JWT_SECRET || 'your-secret-key') as { id: string; type?: string };
     
     // Check if it's an admin token (usually has type or we check Admin collection)
-    // First try to find in Admin collection
-    const { Admin } = await import('../models/admin.model');
     const admin = await Admin.findById(decoded.id).lean();
     
     if (admin) {
@@ -64,7 +64,6 @@ export const authenticate = async (
       } as any;
     } else {
       // If not admin, check regular user
-      const { Registration } = await import('../models/user.model');
       const user = await Registration.findById(decoded.id).lean();
       
       if (user) {

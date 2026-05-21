@@ -1,10 +1,18 @@
-import { Request, Response } from 'express';
-import { paymentService } from '../services/payment.service';
-import { Registration } from '../models/user.model';
+import { Request, Response, NextFunction } from 'express';
+import axios from 'axios';
+import * as cheerio from 'cheerio';
+import PDFDocument from 'pdfkit';
 
+import { paymentService } from '../services/payment.service';
+import { Registration, Invoice } from '../models';
+import { telebirrService } from '../services/telebirr.service';
 import { check, validationResult } from 'express-validator';
 import { isAdmin } from '../middleware/auth.middleware';
 import { validate } from '../middleware/validation.middleware';
+import { AppError } from '../utils/errors';
+import { Logger } from '../utils/logger';
+
+const log = Logger.createLogger('PaymentController');
 
 export class PaymentController {
   /**
@@ -51,7 +59,7 @@ export class PaymentController {
   /**
    * Get payment status
    */
-  public async getPaymentStatus(req: Request, res: Response) {
+  public async getPaymentStatus(req: Request, res: Response, next: NextFunction) {
     try {
       const { invoiceId } = req.params;
       
@@ -59,8 +67,7 @@ export class PaymentController {
       let invoice = null;
       
       if (status !== 'not_found') {
-         const { Invoice } = await import('../models/invoice.model');
-         invoice = await Invoice.findOne({ invoiceId });
+        invoice = await Invoice.findOne({ invoiceId });
       }
       
       if (status === 'not_found') {
@@ -89,12 +96,9 @@ export class PaymentController {
   /**
    * Get user invoices
    */
-  public async getUserInvoices(req: Request, res: Response) {
+  public async getUserInvoices(req: Request, res: Response, next: NextFunction) {
     try {
       const { userId } = req.params;
-      
-      // Import Invoice model
-      const { Invoice } = await import('../models/invoice.model');
       
       const invoices = await Invoice.find({ user: userId }).sort({ createdAt: -1 });
 
@@ -116,12 +120,9 @@ export class PaymentController {
   /**
    * Get invoice by ID
    */
-  public async getInvoiceById(req: Request, res: Response) {
+  public async getInvoiceById(req: Request, res: Response, next: NextFunction) {
     try {
       const { userId, invoiceId } = req.params;
-      
-      // Import Invoice model
-      const { Invoice } = await import('../models/invoice.model');
       
       const invoice = await Invoice.findOne({ 
         user: userId,
@@ -150,17 +151,13 @@ export class PaymentController {
   /**
    * Get all invoices (admin only)
    */
-  public async getAllInvoices(req: Request, res: Response) {
+  public async getAllInvoices(req: Request, res: Response, next: NextFunction) {
     try {
-      // Check if user is admin
       if (!isAdmin(req.user)) {
-        return res.status(403).json({ message: 'Admin access required' });
+        throw AppError.forbidden('Admin access required');
       }
 
       const { status } = req.query;
-      
-      // Import Invoice model
-      const { Invoice } = await import('../models/invoice.model');
 
       const page = parseInt(req.query.page as string) || 1;
       const limit = parseInt(req.query.limit as string) || 10;
@@ -219,20 +216,13 @@ export class PaymentController {
   /**
    * Debug Telebirr transaction scraping
    */
-  public async debugTelebirrScraping(req: Request, res: Response) {
+  public async debugTelebirrScraping(req: Request, res: Response, next: NextFunction) {
     try {
       const { transactionId } = req.body;
       
       if (!transactionId) {
-        return res.status(400).json({ message: 'Transaction ID is required' });
+        throw AppError.badRequest('Transaction ID is required');
       }
-
-      // Import Telebirr service
-      const { telebirrService } = await import('../services/telebirr.service');
-      
-      // Add debugging to see what's being scraped
-      const axios = require('axios');
-      const cheerio = require('cheerio');
       
       const url = `https://transactioninfo.ethiotelecom.et/receipt/${transactionId}`;
       console.log('Debugging URL:', url);
@@ -244,7 +234,7 @@ export class PaymentController {
         timeout: 30000
       });
       
-      const $ = cheerio.load(response.data);
+      const $ = cheerio.load(response.data as string);
       
       // Get all text content for debugging
       const allText = $('body').text();
@@ -327,13 +317,10 @@ export class PaymentController {
   /**
    * Export invoices as CSV or PDF
    */
-  public async exportInvoices(req: Request, res: Response) {
+  public async exportInvoices(req: Request, res: Response, next: NextFunction) {
     try {
       const formatParam = (req.query.format as string | undefined)?.toLowerCase() || 'csv';
       const status = req.query.status as string | undefined;
-
-      // Import Invoice model
-      const { Invoice } = await import('../models/invoice.model');
 
       const query: any = {};
       if (status && status !== 'all') {
@@ -370,11 +357,10 @@ export class PaymentController {
       }
 
       if (formatParam === 'pdf') {
-        const PDFDocument = (await import('pdfkit')).default as any;
+        const doc = new PDFDocument({ margin: 40, layout: 'landscape' }) as any;
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename="invoices_export_${new Date().toISOString().split('T')[0]}.pdf"`);
 
-        const doc = new PDFDocument({ margin: 40, layout: 'landscape' });
         doc.pipe(res);
 
         // font registration

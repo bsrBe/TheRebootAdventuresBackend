@@ -1,8 +1,13 @@
 import { IRegistration } from '../interfaces/user.interface';
-import { Registration } from '../models/user.model';
+import { Registration, Invoice, Event, EventRegistration } from '../models';
 import { TelegramService } from './telegram.service';
 import { telebirrService } from './telebirr.service';
+import { bankVerifierService } from './bank-verifier.service';
 import { qrService } from './qr.service';
+import { AppError } from '../utils/errors';
+import { Logger } from '../utils/logger';
+
+const log = Logger.createLogger('PaymentService');
 
 export class PaymentService {
   
@@ -44,10 +49,6 @@ export class PaymentService {
     try {
       const invoiceId = this.generateInvoiceId();
       
-      // Import Invoice model
-      const { Invoice } = await import('../models/invoice.model');
-      
-      // Save invoice to database
       const invoice = new Invoice({
         invoiceId: invoiceId,
         user: user._id,
@@ -108,11 +109,9 @@ export class PaymentService {
       
       // 1. Verify with appropriate service
       if (method?.toLowerCase() === 'cbe') {
-          const { bankVerifierService } = await import('./bank-verifier.service');
-          receipt = await bankVerifierService.verifyCBE(transactionId);
+        receipt = await bankVerifierService.verifyCBE(transactionId);
       } else if (method?.toLowerCase() === 'boa') {
-          const { bankVerifierService } = await import('./bank-verifier.service');
-          receipt = await bankVerifierService.verifyBOA(transactionId);
+        receipt = await bankVerifierService.verifyBOA(transactionId);
       } else {
           // Default to Telebirr
           receipt = await telebirrService.verifyTransaction(transactionId);
